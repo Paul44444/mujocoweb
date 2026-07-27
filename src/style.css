@@ -1,0 +1,229 @@
+:root {
+    font-family:
+            Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+            sans-serif;
+    color: #f4f4f5;
+    background: #09090b;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background:
+            radial-gradient(circle at top, #20202a 0%, #09090b 45%);
+}
+
+button {
+    font: inherit;
+}
+
+.page {
+    width: min(1100px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 72px 0;
+}
+
+.hero {
+    margin-bottom: 32px;
+}
+
+.eyebrow {
+    margin: 0 0 12px;
+    color: #a1a1aa;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+h1 {
+    margin: 0;
+    font-size: clamp(2.2rem, 6vw, 4.8rem);
+    line-height: 0.98;
+    letter-spacing: -0.05em;
+}
+
+.description {
+    max-width: 650px;
+    margin: 22px 0 0;
+    color: #a1a1aa;
+    font-size: 1.05rem;
+    line-height: 1.7;
+}
+
+.simulation-card {
+    overflow: hidden;
+    border: 1px solid #27272a;
+    border-radius: 22px;
+    background: rgba(24, 24, 27, 0.92);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+}
+
+.simulation-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 22px 24px;
+    border-bottom: 1px solid #27272a;
+}
+
+.simulation-header h2 {
+    margin: 0 0 6px;
+    font-size: 1.2rem;
+}
+
+.simulation-header p {
+    margin: 0;
+    color: #a1a1aa;
+    font-size: 0.9rem;
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #52525b;
+    box-shadow: 0 0 0 5px rgba(82, 82, 91, 0.15);
+}
+
+.status-indicator.connecting {
+    background: #f59e0b;
+    box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.15);
+}
+
+.status-indicator.connected {
+    background: #22c55e;
+    box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.15);
+}
+
+.status-indicator.error {
+    background: #ef4444;
+    box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.15);
+}
+
+button {
+    border: 0;
+    border-radius: 10px;
+    padding: 11px 17px;
+    color: #09090b;
+    background: #f4f4f5;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+    background: #ffffff;
+    transform: translateY(-1px);
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+.simulation-window {
+    position: relative;
+    display: grid;
+    min-height: 480px;
+    place-items: center;
+    overflow: hidden;
+    background:
+            linear-gradient(45deg, #111113 25%, transparent 25%),
+            linear-gradient(-45deg, #111113 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, #111113 75%),
+            linear-gradient(-45deg, transparent 75%, #111113 75%),
+            #0c0c0e;
+    background-position:
+            0 0,
+            0 10px,
+            10px -10px,
+            -10px 0;
+    background-size: 20px 20px;
+}
+
+#simulationImage {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-height: 650px;
+    object-fit: contain;
+    opacity: 0;
+    cursor: crosshair;
+}
+
+#simulationImage.visible {
+    opacity: 1;
+}
+
+.placeholder {
+    position: absolute;
+    color: #71717a;
+    font-size: 0.95rem;
+}
+
+.placeholder.hidden {
+    display: none;
+}
+
+.metadata {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    border-top: 1px solid #27272a;
+    background: #27272a;
+}
+
+.metadata span {
+    padding: 16px 20px;
+    color: #a1a1aa;
+    background: #18181b;
+    font-size: 0.85rem;
+}
+
+.metadata strong {
+    display: block;
+    margin-top: 5px;
+    color: #f4f4f5;
+    font-size: 1rem;
+}
+
+@media (max-width: 700px) {
+    .page {
+        padding: 40px 0;
+    }
+
+    .simulation-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .controls {
+        width: 100%;
+    }
+
+    button {
+        flex: 1;
+    }
+
+    .simulation-window {
+        min-height: 300px;
+    }
+
+    .metadata {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
