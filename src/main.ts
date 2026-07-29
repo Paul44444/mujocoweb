@@ -124,16 +124,41 @@ function connectToSimulation(): void {
     startButton.disabled = true;
 
     const websocketUrl =
-        import.meta.env.VITE_WEBSOCKET_URL ??
-        "wss://mujocowebbackend-production-fb74.up.railway.app/ws/simulation";
+        "wss://mujocoweb-backend.onrender.com/ws/simulation";
 
+    console.log("Connecting to WebSocket:", websocketUrl);
     socket = new WebSocket(websocketUrl);
 
     socket.binaryType = "blob";
 
     socket.onopen = () => {
+        console.log("WebSocket opened:", websocketUrl);
         setStatus("Connected", "connected");
         startButton.textContent = "Simulation running";
+    };
+
+    socket.onerror = (event) => {
+        console.error("WebSocket error:", event);
+        setStatus("WebSocket connection failed", "error");
+    };
+
+    socket.onclose = (event) => {
+        console.log("WebSocket closed:", {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+        });
+
+        socket = null;
+        startButton.disabled = false;
+        startButton.textContent = "Start simulation";
+
+        if (statusText.textContent !== "Simulation finished") {
+            setStatus(
+                `Disconnected (${event.code}${event.reason ? `: ${event.reason}` : ""})`,
+                "idle",
+            );
+        }
     };
 
     socket.onmessage = (event: MessageEvent) => {
@@ -144,20 +169,6 @@ function connectToSimulation(): void {
 
         if (event.data instanceof Blob) {
             displayFrame(event.data);
-        }
-    };
-
-    socket.onerror = () => {
-        setStatus("WebSocket connection failed", "error");
-    };
-
-    socket.onclose = () => {
-        socket = null;
-        startButton.disabled = false;
-        startButton.textContent = "Start simulation";
-
-        if (statusText.textContent !== "Simulation finished") {
-            setStatus("Disconnected", "idle");
         }
     };
 }
