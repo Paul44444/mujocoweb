@@ -123,9 +123,11 @@ function connectToSimulation(): void {
     setStatus("Connecting to Python backend…", "connecting");
     startButton.disabled = true;
 
-    socket = new WebSocket(
-        "ws://127.0.0.1:8000/ws/simulation",
-    );
+    const websocketUrl =
+        import.meta.env.VITE_WEBSOCKET_URL ??
+        "wss://mujocowebbackend-production-fb74.up.railway.app/ws/simulation";
+
+    socket = new WebSocket(websocketUrl);
 
     socket.binaryType = "blob";
 
