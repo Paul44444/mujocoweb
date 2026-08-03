@@ -1,44 +1,288 @@
 import "./style.css";
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
+  <nav class="navbar">
+    <div class="nav-content">
+      <div class="nav-logo">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+        <span class="nav-title">DAPG Web Demo</span>
+      </div>
+      <div class="nav-tabs">
+        <button class="nav-tab active" data-tab="demo">Live Demo</button>
+        <button class="nav-tab" data-tab="about">About</button>
+      </div>
+    </div>
+  </nav>
+
   <main class="page">
-    <section class="hero">
-      <p class="eyebrow">DAPG · MuJoCo · RoboHive</p>
-      <h1>Robotic Hand Simulation</h1>
-      <p class="description">
-        A trained DAPG policy running in Python and streamed live to the browser.
-      </p>
-    </section>
-    
-    <section class="simulation-card">
-      <div class="simulation-header">
-        <div>
-          <h2>Live simulation</h2>
-          <p id="statusText">Not connected</p>
+    <section id="demo-section" class="tab-content active">
+      <section class="hero">
+        <p class="eyebrow">DAPG · MuJoCo · RoboHive · Cloud Robotics</p>
+        <h1>Dexterous Hand Manipulation</h1>
+        <p class="description">
+          Experience a trained DAPG (Demo Augmented Policy Gradient) policy performing complex manipulation tasks.
+          Real-time physics simulation powered by MuJoCo, streamed from cloud to browser.
+        </p>
+      </section>
+
+      <section class="simulation-card">
+        <div class="simulation-header">
+          <div>
+            <h2>Live Simulation</h2>
+            <p id="statusText">Not connected</p>
+          </div>
+
+          <div class="controls">
+            <span id="statusIndicator" class="status-indicator"></span>
+            <button id="startButton">Start Simulation</button>
+          </div>
         </div>
 
-        <div class="controls">
-          <span id="statusIndicator" class="status-indicator"></span>
-          <button id="startButton">Start simulation</button>
+        <div class="simulation-window">
+          <img
+            id="simulationImage"
+            alt="Live MuJoCo simulation"
+          />
+
+          <div id="placeholder" class="placeholder">
+            <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <p>Press "Start Simulation" to begin</p>
+          </div>
+        </div>
+
+        <div class="metadata">
+          <span>Episode: <strong id="episodeValue">—</strong></span>
+          <span>Step: <strong id="stepValue">—</strong></span>
+          <span>Reward: <strong id="rewardValue">—</strong></span>
+          <span>Simulation Time: <strong id="timeValue">—</strong></span>
+        </div>
+      </section>
+
+      <div class="info-banner">
+        <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="16" x2="12" y2="12"/>
+          <line x1="12" y1="8" x2="12.01" y2="8"/>
+        </svg>
+        <span>Click on the simulation window to set target positions for the robotic hand</span>
+      </div>
+
+      <div class="theory-section">
+        <div class="theory-header">
+          <h2>Technical Deep Dive</h2>
+          <p class="theory-subtitle">Understanding the DAPG algorithm and its mathematical foundations</p>
+        </div>
+
+        <div class="theory-content">
+          <div class="theory-block">
+            <h3>Demo Augmented Policy Gradient (DAPG)</h3>
+            <p>
+              DAPG is a hybrid reinforcement learning algorithm that combines behavioral cloning with policy gradient methods
+              to learn complex manipulation tasks. The key insight is to use expert demonstrations not just for initialization,
+              but throughout training to guide policy optimization.
+            </p>
+            <div class="paper-reference">
+              <svg class="paper-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <a href="https://arxiv.org/abs/1709.10087" target="_blank" rel="noopener noreferrer">
+                Learning Complex Dexterous Manipulation with Deep Reinforcement Learning and Demonstrations (Rajeswaran et al., 2017)
+              </a>
+            </div>
+          </div>
+
+          <div class="theory-block">
+            <h3>Objective Function</h3>
+            <p>The DAPG algorithm optimizes a combined objective that balances policy gradient and behavioral cloning:</p>
+            <div class="equation">
+              <code>L(θ) = L<sub>RL</sub>(θ) + λ<sub>0</sub>λ<sub>t</sub> L<sub>BC</sub>(θ)</code>
+            </div>
+            <p class="equation-desc">
+              where <code>L<sub>RL</sub></code> is the standard policy gradient objective, <code>L<sub>BC</sub></code> is the behavioral cloning loss,
+              and <code>λ<sub>t</sub></code> is a time-dependent weighting factor that decreases during training.
+            </p>
+          </div>
+
+          <div class="theory-block">
+            <h3>Policy Gradient Component</h3>
+            <p>The reinforcement learning objective uses Natural Policy Gradient (NPG) / TRPO updates:</p>
+            <div class="equation">
+              <code>L<sub>RL</sub>(θ) = E<sub>τ∼π<sub>θ</sub></sub>[∑<sub>t</sub> A<sup>π</sup>(s<sub>t</sub>, a<sub>t</sub>)]</code>
+            </div>
+            <p class="equation-desc">
+              where <code>A<sup>π</sup>(s, a)</code> is the advantage function estimating how much better action <code>a</code> is
+              compared to the average action in state <code>s</code>.
+            </p>
+          </div>
+
+          <div class="theory-block">
+            <h3>Behavioral Cloning Component</h3>
+            <p>The BC loss ensures the policy stays close to expert demonstrations:</p>
+            <div class="equation">
+              <code>L<sub>BC</sub>(θ) = E<sub>(s,a)∼D<sub>demo</sub></sub>[−log π<sub>θ</sub>(a|s)]</code>
+            </div>
+            <p class="equation-desc">
+              where <code>D<sub>demo</sub></code> is the dataset of expert demonstrations, essentially maximum likelihood estimation
+              on the demonstration data.
+            </p>
+          </div>
+
+          <div class="theory-block">
+            <h3>Advantage Function Estimation</h3>
+            <p>DAPG uses Generalized Advantage Estimation (GAE) for variance reduction:</p>
+            <div class="equation">
+              <code>Â<sub>t</sub> = ∑<sub>l=0</sub><sup>∞</sup> (γλ)<sup>l</sup>δ<sub>t+l</sub></code>
+            </div>
+            <div class="equation">
+              <code>δ<sub>t</sub> = r<sub>t</sub> + γV(s<sub>t+1</sub>) − V(s<sub>t</sub>)</code>
+            </div>
+            <p class="equation-desc">
+              where <code>γ</code> is the discount factor, <code>λ</code> is the GAE parameter, and <code>V(s)</code> is the learned value function.
+            </p>
+          </div>
+
+          <div class="theory-block">
+            <h3>Adaptive Demonstration Weighting</h3>
+            <p>The demonstration weight decays over time to allow the policy to improve beyond demonstrations:</p>
+            <div class="equation">
+              <code>λ<sub>t</sub> = max(λ<sub>final</sub>, λ<sub>init</sub> · (1 − t/T<sub>decay</sub>))</code>
+            </div>
+            <p class="equation-desc">
+              Starting with high BC weight for stable initialization, gradually decreasing to allow pure RL exploration.
+              Typical values: <code>λ<sub>init</sub> = 1.0</code>, <code>λ<sub>final</sub> = 0.01</code>.
+            </p>
+          </div>
+
+          <div class="theory-block">
+            <h3>Network Architecture</h3>
+            <p>The policy network π<sub>θ</sub> is typically a multi-layer perceptron:</p>
+            <div class="equation">
+              <code>π<sub>θ</sub>(a|s) = N(μ<sub>θ</sub>(s), Σ)</code>
+            </div>
+            <p class="equation-desc">
+              A Gaussian policy where <code>μ<sub>θ</sub></code> is the mean output by the neural network and <code>Σ</code>
+              is a learned or fixed covariance matrix. The network typically has 2-3 hidden layers with 64-256 units each.
+            </p>
+          </div>
+
+          <div class="theory-block">
+            <h3>Key Advantages of DAPG</h3>
+            <ul class="advantage-list">
+              <li><strong>Sample Efficiency:</strong> Demonstrations provide a strong initialization, reducing training time by 5-10×</li>
+              <li><strong>Stability:</strong> BC regularization prevents catastrophic forgetting and policy collapse</li>
+              <li><strong>Beyond Demonstrations:</strong> Unlike pure imitation learning, DAPG can exceed expert performance</li>
+              <li><strong>High-Dimensional Control:</strong> Successfully scales to 24+ DOF manipulation tasks</li>
+            </ul>
+          </div>
+
+          <div class="theory-block">
+            <h3>Implementation in This Demo</h3>
+            <p>
+              This demo uses a pre-trained DAPG policy for the Adroit hand environment. The policy was trained with:
+            </p>
+            <ul class="advantage-list">
+              <li>~25 human demonstrations of the manipulation task</li>
+              <li>Natural Policy Gradient updates with KL constraint of 0.01</li>
+              <li>GAE with λ = 0.95, discount γ = 0.995</li>
+              <li>Demonstration weight decay from 1.0 to 0.05 over 500 epochs</li>
+              <li>Training time: ~50M environment steps (~12 hours on GPU)</li>
+            </ul>
+          </div>
         </div>
       </div>
-      
-      <div class="simulation-window">
-        <img
-          id="simulationImage"
-          alt="Live MuJoCo simulation"
-        />
-      
-        <div id="placeholder" class="placeholder">
-          Press “Start simulation” to begin.
+    </section>
+
+    <section id="about-section" class="tab-content">
+      <div class="about-hero">
+        <h1>About This Project</h1>
+        <p class="about-subtitle">Bringing advanced reinforcement learning to the web</p>
+      </div>
+
+      <div class="about-grid">
+        <div class="about-card">
+          <div class="card-icon">🤖</div>
+          <h3>DAPG Algorithm</h3>
+          <p>
+            Demo Augmented Policy Gradient (DAPG) combines behavioral cloning with policy gradient methods.
+            The algorithm leverages expert demonstrations to bootstrap learning, then refines the policy through
+            reinforcement learning. This hybrid approach enables complex dexterous manipulation tasks that
+            would be infeasible with pure RL or imitation learning alone.
+          </p>
+        </div>
+
+        <div class="about-card">
+          <div class="card-icon">🦾</div>
+          <h3>Dexterous Manipulation</h3>
+          <p>
+            This demo showcases a 24-DOF robotic hand (Adroit) trained on the RoboHive benchmark suite.
+            The policy controls complex finger movements to manipulate objects with human-like dexterity.
+            Tasks include in-hand rotation, pen spinning, and precise object placement - all learned through
+            trial and error in simulation.
+          </p>
+        </div>
+
+        <div class="about-card">
+          <div class="card-icon">⚡</div>
+          <h3>MuJoCo Physics</h3>
+          <p>
+            MuJoCo (Multi-Joint dynamics with Contact) is a high-performance physics engine developed for
+            robotics and biomechanics. It provides accurate contact dynamics, compliant mechanisms, and
+            efficient computation - running at 500+ FPS on the backend to deliver smooth, real-time
+            simulation feedback.
+          </p>
+        </div>
+
+        <div class="about-card">
+          <div class="card-icon">☁️</div>
+          <h3>Cloud Architecture</h3>
+          <p>
+            The simulation runs entirely in the cloud on Python-based infrastructure. WebSocket connections
+            stream rendered frames to the browser at 30 FPS. This serverless architecture enables anyone to
+            experience cutting-edge robotics research without local GPU requirements or complex dependencies.
+          </p>
+        </div>
+
+        <div class="about-card">
+          <div class="card-icon">🎯</div>
+          <h3>Interactive Control</h3>
+          <p>
+            Click anywhere in the simulation to set target positions. The neural network policy processes
+            proprioceptive feedback (joint angles, velocities) and target coordinates to generate torque
+            commands. Watch as the hand autonomously plans and executes reaching motions to achieve your
+            specified goals.
+          </p>
+        </div>
+
+        <div class="about-card">
+          <div class="card-icon">🔬</div>
+          <h3>Research Impact</h3>
+          <p>
+            DAPG has been widely adopted in robotic manipulation research. By making this technology accessible
+            through the browser, we democratize access to state-of-the-art RL techniques. This platform serves
+            as both an educational tool and a testbed for exploring human-robot interaction paradigms.
+          </p>
         </div>
       </div>
-      
-      <div class="metadata">
-        <span>Episode: <strong id="episodeValue">—</strong></span>
-        <span>Step: <strong id="stepValue">—</strong></span>
-        <span>Reward: <strong id="rewardValue">—</strong></span>
-        <span>Simulation time: <strong id="timeValue">—</strong></span>
+
+      <div class="tech-stack">
+        <h3>Technology Stack</h3>
+        <div class="tech-tags">
+          <span class="tech-tag">Python</span>
+          <span class="tech-tag">MuJoCo</span>
+          <span class="tech-tag">PyTorch</span>
+          <span class="tech-tag">RoboHive</span>
+          <span class="tech-tag">WebSocket</span>
+          <span class="tech-tag">TypeScript</span>
+          <span class="tech-tag">Cloud Deploy</span>
+          <span class="tech-tag">Real-time Rendering</span>
+        </div>
       </div>
     </section>
   </main>
@@ -227,6 +471,27 @@ function displayFrame(frameBlob: Blob): void {
     simulationImage.classList.add("visible");
     placeholder.classList.add("hidden");
 }
+
+// Tab switching functionality
+const navTabs = document.querySelectorAll<HTMLButtonElement>(".nav-tab");
+const tabContents = document.querySelectorAll<HTMLElement>(".tab-content");
+
+navTabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+        const targetTab = tab.dataset.tab;
+
+        navTabs.forEach((t) => t.classList.remove("active"));
+        tab.classList.add("active");
+
+        tabContents.forEach((content) => {
+            if (content.id === `${targetTab}-section`) {
+                content.classList.add("active");
+            } else {
+                content.classList.remove("active");
+            }
+        });
+    });
+});
 
 startButton.addEventListener("click", connectToSimulation);
 simulationImage.addEventListener("click", handleSimulationClick);
