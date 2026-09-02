@@ -1,6 +1,7 @@
 import "./style.css";
 
 const RENDER_BACKEND_URL = "https://mujocoweb-backend.onrender.com";
+const DEFAULT_BACKEND_URL = "https://thumbnail-delivers-solving-followed.trycloudflare.com";
 
 function normalizeBackendUrl(value: string): string {
     const url = new URL(value);
@@ -12,8 +13,10 @@ function normalizeBackendUrl(value: string): string {
 
 function resolveBackendUrl(): string {
     const query = new URLSearchParams(window.location.search).get("backend");
-    if (query === "render") {
+    if (query === "default") {
         localStorage.removeItem("mujocoweb-backend-url");
+    } else if (query === "render") {
+        localStorage.setItem("mujocoweb-backend-url", RENDER_BACKEND_URL);
     } else if (query) {
         try {
             localStorage.setItem("mujocoweb-backend-url", normalizeBackendUrl(query));
@@ -24,7 +27,7 @@ function resolveBackendUrl(): string {
     const configured = import.meta.env.VITE_BACKEND_URL?.trim();
     const stored = localStorage.getItem("mujocoweb-backend-url");
     try {
-        return normalizeBackendUrl(stored || configured || RENDER_BACKEND_URL);
+        return normalizeBackendUrl(stored || configured || DEFAULT_BACKEND_URL);
     } catch {
         return RENDER_BACKEND_URL;
     }

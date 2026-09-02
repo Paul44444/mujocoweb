@@ -1,6 +1,7 @@
 # Backend hosting switch
 
-The frontend keeps Render as its built-in fallback:
+The frontend currently uses the Ubuntu computer's Cloudflare tunnel by default.
+Render remains available as a fallback:
 
 ```text
 https://mujocoweb-backend.onrender.com
@@ -13,8 +14,8 @@ variable in Vercel and redeploy:
 VITE_BACKEND_URL=https://simulation.example.com
 ```
 
-Remove `VITE_BACKEND_URL` and redeploy to switch back to Render. No source-code
-change is required.
+The built-in default is declared as `DEFAULT_BACKEND_URL` in `src/main.ts`.
+`RENDER_BACKEND_URL` is kept separately and is not removed.
 
 For a temporary browser-only test, open the deployed frontend once with:
 
@@ -26,6 +27,12 @@ That browser remembers the override. Return it to Render with:
 
 ```text
 https://mujocoweb.vercel.app/?backend=render
+```
+
+Return to the built-in local-GPU default with:
+
+```text
+https://mujocoweb.vercel.app/?backend=default
 ```
 
 Only use a backend URL that you control. The public endpoint must use HTTPS;
