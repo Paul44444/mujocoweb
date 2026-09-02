@@ -219,33 +219,6 @@ h1 {
     background: rgba(63, 63, 70, 0.8);
 }
 
-.media-button {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    border: 1px solid #3f3f46;
-    border-radius: 50%;
-    place-items: center;
-    color: #f4f4f5;
-    background: rgba(39, 39, 42, 0.8);
-    font-weight: 900;
-    cursor: pointer;
-}
-
-.media-button span {
-    transform: translateY(-1px);
-}
-
-.media-button:hover:not(:disabled) {
-    border-color: #76b900;
-    background: rgba(118, 185, 0, 0.15);
-}
-
-.media-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.38;
-}
-
 .status-indicator {
     width: 10px;
     height: 10px;
@@ -270,6 +243,11 @@ h1 {
 }
 
 #startButton {
+    display: inline-flex;
+    min-width: 154px;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
     border: 0;
     border-radius: 10px;
     padding: 11px 20px;
@@ -279,6 +257,45 @@ h1 {
     font-size: 0.95rem;
     cursor: pointer;
     box-shadow: 0 2px 8px rgba(118, 185, 0, 0.3);
+}
+
+.playback-icon {
+    position: relative;
+    display: inline-block;
+    flex: 0 0 14px;
+    width: 14px;
+    height: 16px;
+}
+
+.play-icon::before {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 0;
+    height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 10px solid currentColor;
+    content: "";
+}
+
+.pause-icon::before,
+.pause-icon::after {
+    position: absolute;
+    top: 2px;
+    width: 4px;
+    height: 12px;
+    border-radius: 1px;
+    background: currentColor;
+    content: "";
+}
+
+.pause-icon::before {
+    left: 1px;
+}
+
+.pause-icon::after {
+    right: 1px;
 }
 
 #startButton:hover:not(:disabled) {

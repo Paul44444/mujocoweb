@@ -90,10 +90,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               </svg>
               Experiment setup
             </button>
-            <button id="pauseButton" class="media-button" type="button" disabled aria-label="Pause simulation" title="Pause simulation">
-              <span aria-hidden="true">Ⅱ</span>
+            <button id="startButton" type="button">
+              <span class="playback-icon play-icon" aria-hidden="true"></span>
+              <span class="playback-label">Start simulation</span>
             </button>
-            <button id="startButton">Start Simulation</button>
           </div>
         </div>
 
@@ -457,7 +457,6 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
 const startButton =
     document.querySelector<HTMLButtonElement>("#startButton")!;
-const pauseButton = document.querySelector<HTMLButtonElement>("#pauseButton")!;
 const resetCameraButton = document.querySelector<HTMLButtonElement>("#resetCameraButton")!;
 
 const simulationImage =
@@ -775,10 +774,25 @@ function togglePause(): void {
     const nextPaused = !isPaused;
     if (!sendSimulationCommand({type: "set_paused", paused: nextPaused})) return;
     isPaused = nextPaused;
-    pauseButton.querySelector("span")!.textContent = isPaused ? "▶" : "Ⅱ";
-    pauseButton.setAttribute("aria-label", isPaused ? "Resume simulation" : "Pause simulation");
-    pauseButton.title = isPaused ? "Resume simulation" : "Pause simulation";
+    updatePlaybackButton();
     setStatus(isPaused ? "Simulation paused" : "Simulation running", "connected");
+}
+
+function updatePlaybackButton(): void {
+    const icon = startButton.querySelector<HTMLElement>(".playback-icon")!;
+    const label = startButton.querySelector<HTMLElement>(".playback-label")!;
+    const connected = socket?.readyState === WebSocket.OPEN;
+    icon.className = `playback-icon ${connected && !isPaused ? "pause-icon" : "play-icon"}`;
+    label.textContent = connected ? (isPaused ? "Resume" : "Pause") : "Start simulation";
+    startButton.setAttribute("aria-label", label.textContent);
+}
+
+function handlePlaybackButton(): void {
+    if (socket?.readyState === WebSocket.OPEN) {
+        togglePause();
+    } else {
+        connectToSimulation();
+    }
 }
 
 function beginCameraDrag(event: PointerEvent): void {
@@ -839,8 +853,8 @@ function connectToSimulation(): void {
     socket.onopen = () => {
         console.log("WebSocket opened:", websocketUrl);
         setStatus("Connected", "connected");
-        startButton.textContent = "Simulation running";
-        pauseButton.disabled = false;
+        startButton.disabled = false;
+        updatePlaybackButton();
         resetCameraButton.disabled = false;
     };
 
@@ -858,11 +872,9 @@ function connectToSimulation(): void {
 
         socket = null;
         isPaused = false;
-        pauseButton.disabled = true;
-        pauseButton.querySelector("span")!.textContent = "Ⅱ";
+        updatePlaybackButton();
         resetCameraButton.disabled = true;
         startButton.disabled = false;
-        startButton.textContent = "Start simulation";
 
         if (statusText.textContent !== "Simulation finished") {
             setStatus(
@@ -910,7 +922,7 @@ function handleTextMessage(message: string): void {
 
             if (data.status === "simulation_finished") {
                 setStatus("Simulation finished", "idle");
-                startButton.textContent = "Run again";
+                updatePlaybackButton();
             }
         }
 
@@ -960,14 +972,13 @@ navTabs.forEach((tab) => {
     });
 });
 
-startButton.addEventListener("click", connectToSimulation);
+startButton.addEventListener("click", handlePlaybackButton);
 simulationImage.addEventListener("click", handleSimulationClick);
 simulationImage.addEventListener("pointerdown", beginCameraDrag);
 simulationImage.addEventListener("pointermove", updateCameraDrag);
 simulationImage.addEventListener("pointerup", endCameraDrag);
 simulationImage.addEventListener("pointercancel", endCameraDrag);
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
-pauseButton.addEventListener("click", togglePause);
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 setupButton.addEventListener("click", openSetupPanel);
 editConfigurationButton.addEventListener("click", openSetupPanel);
