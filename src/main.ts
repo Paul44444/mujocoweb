@@ -101,6 +101,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <img
             id="simulationImage"
             alt="Live MuJoCo simulation"
+            draggable="false"
           />
 
           <div id="placeholder" class="placeholder">
@@ -111,7 +112,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           </div>
 
           <div class="camera-controls" aria-label="Camera controls">
-            <span>Drag to orbit · Scroll to zoom</span>
+            <span>Drag to orbit · Scroll or pinch to zoom</span>
             <button id="resetCameraButton" type="button" disabled>Reset view</button>
           </div>
         </div>
@@ -511,7 +512,10 @@ let socket: WebSocket | null = null;
 let currentImageUrl: string | null = null;
 let lastFocusedElement: HTMLElement | null = null;
 let isPaused = false;
-let cameraDrag: {pointerId: number; x: number; y: number; moved: boolean} | null = null;
+const activePointers = new Map<number, {x: number; y: number}>();
+let cameraDrag: {pointerId: number; x: number; y: number} | null = null;
+let pinchDistance: number | null = null;
+let cameraGestureMoved = false;
 let suppressSimulationClick = false;
 
 const defaultConfiguration = {
@@ -797,27 +801,63 @@ function handlePlaybackButton(): void {
 
 function beginCameraDrag(event: PointerEvent): void {
     if (!socket || socket.readyState !== WebSocket.OPEN || event.button !== 0) return;
-    cameraDrag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false};
+    event.preventDefault();
+    activePointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+    cameraGestureMoved = false;
     simulationImage.setPointerCapture(event.pointerId);
+    if (activePointers.size === 1) {
+        cameraDrag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY};
+        pinchDistance = null;
+    } else if (activePointers.size === 2) {
+        const [first, second] = [...activePointers.values()];
+        pinchDistance = Math.hypot(second.x - first.x, second.y - first.y);
+        cameraDrag = null;
+    }
 }
 
 function updateCameraDrag(event: PointerEvent): void {
+    const previous = activePointers.get(event.pointerId);
+    if (!previous) return;
+    event.preventDefault();
+    activePointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+
+    if (activePointers.size >= 2) {
+        const [first, second] = [...activePointers.values()];
+        const nextDistance = Math.hypot(second.x - first.x, second.y - first.y);
+        if (pinchDistance !== null && Math.abs(nextDistance - pinchDistance) >= 1) {
+            cameraGestureMoved = true;
+            sendSimulationCommand({type: "camera_zoom", delta: (pinchDistance - nextDistance) / 35});
+        }
+        pinchDistance = nextDistance;
+        return;
+    }
+
     if (!cameraDrag || cameraDrag.pointerId !== event.pointerId) return;
     const deltaX = event.clientX - cameraDrag.x;
     const deltaY = event.clientY - cameraDrag.y;
     cameraDrag.x = event.clientX;
     cameraDrag.y = event.clientY;
     if (Math.abs(deltaX) + Math.abs(deltaY) < 1) return;
-    cameraDrag.moved = true;
+    cameraGestureMoved = true;
     sendSimulationCommand({type: "camera_orbit", deltaX, deltaY});
 }
 
 function endCameraDrag(event: PointerEvent): void {
-    if (!cameraDrag || cameraDrag.pointerId !== event.pointerId) return;
-    suppressSimulationClick = cameraDrag.moved;
-    cameraDrag = null;
+    if (!activePointers.has(event.pointerId)) return;
+    event.preventDefault();
+    activePointers.delete(event.pointerId);
+    suppressSimulationClick = cameraGestureMoved;
     if (simulationImage.hasPointerCapture(event.pointerId)) {
         simulationImage.releasePointerCapture(event.pointerId);
+    }
+    if (activePointers.size === 1) {
+        const [pointerId, point] = [...activePointers.entries()][0];
+        cameraDrag = {pointerId, x: point.x, y: point.y};
+        pinchDistance = null;
+    } else if (activePointers.size === 0) {
+        cameraDrag = null;
+        pinchDistance = null;
+        cameraGestureMoved = false;
     }
 }
 
@@ -978,6 +1018,14 @@ simulationImage.addEventListener("pointerdown", beginCameraDrag);
 simulationImage.addEventListener("pointermove", updateCameraDrag);
 simulationImage.addEventListener("pointerup", endCameraDrag);
 simulationImage.addEventListener("pointercancel", endCameraDrag);
+simulationImage.addEventListener("lostpointercapture", (event) => {
+    activePointers.delete(event.pointerId);
+    if (activePointers.size === 0) {
+        cameraDrag = null;
+        pinchDistance = null;
+    }
+});
+simulationImage.addEventListener("dragstart", (event) => event.preventDefault());
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 setupButton.addEventListener("click", openSetupPanel);
