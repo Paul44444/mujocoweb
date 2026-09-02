@@ -83,7 +83,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <line x1="12" y1="16" x2="12" y2="12"/>
           <line x1="12" y1="8" x2="12.01" y2="8"/>
         </svg>
-        <span>Click on the simulation window to set target positions for the robotic hand</span>
+        <span id="interactionHint">Click on the simulation window to set target positions for the robotic hand</span>
       </div>
 
       <div class="theory-section">
@@ -318,8 +318,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
           </svg>
           <div>
-            <strong>Configuration preview</strong>
-            <span>Selections are saved in this browser. Backend switching will be connected in the next step.</span>
+            <strong>Preset tasks are connected</strong>
+            <span>Task selections are sent to the backend. Advanced filenames are saved locally for a future custom-file workflow.</span>
           </div>
         </div>
 
@@ -328,11 +328,12 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <span class="section-number">01</span>
             <div><h3>Robot</h3><p>The physical model and task environment.</p></div>
           </div>
-          <label class="field-label" for="robotPreset">Robot model</label>
+          <label class="field-label" for="robotPreset">Manipulation task</label>
           <select id="robotPreset" class="setup-select">
             <option value="adroit-relocate">Adroit Hand — Object relocation</option>
-            <option value="adroit-pen" disabled>Adroit Hand — Pen manipulation (coming soon)</option>
-            <option value="sawyer" disabled>Sawyer Arm (coming soon)</option>
+            <option value="adroit-hammer">Adroit Hand — Hammer a nail</option>
+            <option value="adroit-door">Adroit Hand — Open a door</option>
+            <option value="adroit-pen">Adroit Hand — Reorient a pen</option>
           </select>
           <div class="file-field">
             <div class="file-icon">XML</div>
@@ -349,8 +350,9 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <label class="field-label" for="policyPreset">Policy</label>
           <select id="policyPreset" class="setup-select">
             <option value="dapg-relocate">DAPG — Relocation policy</option>
-            <option value="manual" disabled>Manual control (coming soon)</option>
-            <option value="random" disabled>Random baseline (coming soon)</option>
+            <option value="dapg-hammer">DAPG — Hammer policy</option>
+            <option value="dapg-door">DAPG — Door policy</option>
+            <option value="dapg-pen">DAPG — Pen policy</option>
           </select>
           <div class="file-field">
             <div class="file-icon">PKL</div>
@@ -418,15 +420,72 @@ const robotFileDisplay = document.querySelector<HTMLElement>("#robotFileDisplay"
 const policyFileDisplay = document.querySelector<HTMLElement>("#policyFileDisplay")!;
 const configurationSummary = document.querySelector<HTMLElement>("#configurationSummary")!;
 const fileValidationMessage = document.querySelector<HTMLParagraphElement>("#fileValidationMessage")!;
+const robotPreset = document.querySelector<HTMLSelectElement>("#robotPreset")!;
+const policyPreset = document.querySelector<HTMLSelectElement>("#policyPreset")!;
+const interactionHint = document.querySelector<HTMLElement>("#interactionHint")!;
 
 let socket: WebSocket | null = null;
 let currentImageUrl: string | null = null;
 let lastFocusedElement: HTMLElement | null = null;
 
 const defaultConfiguration = {
+    taskId: "relocate",
     robotFile: "relocate_clean.xml",
     policyFile: "policy_paul.pkl",
-};
+} as const;
+
+const taskCatalog = {
+    relocate: {
+        name: "Adroit Relocation",
+        robotPreset: "adroit-relocate",
+        policyPreset: "dapg-relocate",
+        robotFile: "relocate_clean.xml",
+        policyFile: "policy_paul.pkl",
+        interactive: true,
+    },
+    hammer: {
+        name: "Adroit Hammer",
+        robotPreset: "adroit-hammer",
+        policyPreset: "dapg-hammer",
+        robotFile: "DAPG_hammer.xml",
+        policyFile: "hammer-v0.pickle",
+        interactive: false,
+    },
+    door: {
+        name: "Adroit Door",
+        robotPreset: "adroit-door",
+        policyPreset: "dapg-door",
+        robotFile: "DAPG_door.xml",
+        policyFile: "door-v0.pickle",
+        interactive: false,
+    },
+    pen: {
+        name: "Adroit Pen",
+        robotPreset: "adroit-pen",
+        policyPreset: "dapg-pen",
+        robotFile: "DAPG_pen.xml",
+        policyFile: "pen-v0.pickle",
+        interactive: false,
+    },
+} as const;
+
+type TaskId = keyof typeof taskCatalog;
+let selectedTaskId: TaskId = defaultConfiguration.taskId;
+
+function taskIdFromPreset(value: string): TaskId {
+    const taskId = value.replace("adroit-", "") as TaskId;
+    return taskId in taskCatalog ? taskId : "relocate";
+}
+
+function populateTask(taskId: TaskId): void {
+    const task = taskCatalog[taskId];
+    selectedTaskId = taskId;
+    robotPreset.value = task.robotPreset;
+    policyPreset.value = task.policyPreset;
+    robotFileInput.value = task.robotFile;
+    policyFileInput.value = task.policyFile;
+    fileValidationMessage.textContent = "";
+}
 
 function openSetupPanel(): void {
     lastFocusedElement = document.activeElement as HTMLElement;
@@ -476,22 +535,32 @@ function applyConfiguration(): void {
     const policyFile = policyFileInput.value.trim();
     robotFileDisplay.textContent = robotFile;
     policyFileDisplay.textContent = policyFile;
-    configurationSummary.textContent = `${robotFile} · ${policyFile}`;
-    localStorage.setItem("mujocoweb-configuration", JSON.stringify({ robotFile, policyFile }));
+    const task = taskCatalog[selectedTaskId];
+    configurationSummary.textContent = `${task.name} · ${policyFile}`;
+    interactionHint.textContent = task.interactive
+        ? "Click on the simulation window to set target positions for the robotic hand"
+        : `${task.name} runs autonomously with its trained DAPG policy`;
+    localStorage.setItem("mujocoweb-configuration", JSON.stringify({
+        taskId: selectedTaskId,
+        robotFile,
+        policyFile,
+    }));
 }
 
 function resetConfiguration(): void {
-    robotFileInput.value = defaultConfiguration.robotFile;
-    policyFileInput.value = defaultConfiguration.policyFile;
-    fileValidationMessage.textContent = "";
+    populateTask("relocate");
 }
 
 try {
     const storedConfiguration = localStorage.getItem("mujocoweb-configuration");
     if (storedConfiguration) {
         const parsed = JSON.parse(storedConfiguration) as Partial<typeof defaultConfiguration>;
-        robotFileInput.value = parsed.robotFile ?? defaultConfiguration.robotFile;
-        policyFileInput.value = parsed.policyFile ?? defaultConfiguration.policyFile;
+        const storedTask = parsed.taskId && parsed.taskId in taskCatalog
+            ? parsed.taskId as TaskId
+            : "relocate";
+        populateTask(storedTask);
+        robotFileInput.value = parsed.robotFile ?? taskCatalog[storedTask].robotFile;
+        policyFileInput.value = parsed.policyFile ?? taskCatalog[storedTask].policyFile;
         applyConfiguration();
     }
 } catch {
@@ -507,6 +576,10 @@ function setStatus(
 }
 
 function handleSimulationClick(event: MouseEvent): void {
+    if (!taskCatalog[selectedTaskId].interactive) {
+        return;
+    }
+
     if (!socket || socket.readyState !== WebSocket.OPEN) {
         console.warn("Cannot send target: WebSocket is not connected.");
         return;
@@ -547,11 +620,13 @@ function connectToSimulation(): void {
     setStatus("Connecting to Python backend…", "connecting");
     startButton.disabled = true;
 
-    const websocketUrl =
-        "wss://mujocoweb-backend.onrender.com/ws/simulation";
+    const websocketUrl = new URL(
+        "wss://mujocoweb-backend.onrender.com/ws/simulation",
+    );
+    websocketUrl.searchParams.set("task", selectedTaskId);
 
     console.log("Connecting to WebSocket:", websocketUrl);
-    socket = new WebSocket(websocketUrl);
+    socket = new WebSocket(websocketUrl.toString());
 
     socket.binaryType = "blob";
 
@@ -680,6 +755,15 @@ editConfigurationButton.addEventListener("click", openSetupPanel);
 closeSetupButton.addEventListener("click", closeSetupPanel);
 setupOverlay.addEventListener("click", closeSetupPanel);
 resetSetupButton.addEventListener("click", resetConfiguration);
+robotPreset.addEventListener("change", () => {
+    populateTask(taskIdFromPreset(robotPreset.value));
+});
+policyPreset.addEventListener("change", () => {
+    const matchingTask = (Object.keys(taskCatalog) as TaskId[]).find(
+        (taskId) => taskCatalog[taskId].policyPreset === policyPreset.value,
+    );
+    if (matchingTask) populateTask(matchingTask);
+});
 
 setupForm.addEventListener("submit", (event) => {
     event.preventDefault();
