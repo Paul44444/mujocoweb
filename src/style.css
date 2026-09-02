@@ -585,6 +585,112 @@ body.panel-open {
     color: #52525b;
 }
 
+.object-prompt {
+    min-height: 96px;
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.prompt-examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin: 10px 0 14px;
+}
+
+.prompt-examples button {
+    border: 1px solid #3f3f46;
+    border-radius: 999px;
+    padding: 6px 9px;
+    color: #a1a1aa;
+    background: transparent;
+    font-size: 0.7rem;
+    cursor: pointer;
+}
+
+.prompt-examples button:hover {
+    border-color: rgba(118, 185, 0, 0.55);
+    color: #d4d4d8;
+}
+
+.generate-button {
+    width: 100%;
+    border: 1px solid rgba(118, 185, 0, 0.5);
+    border-radius: 10px;
+    padding: 11px 14px;
+    color: #d9f99d;
+    background: rgba(118, 185, 0, 0.11);
+    font-weight: 750;
+    cursor: pointer;
+}
+
+.generate-button:hover:not(:disabled) {
+    border-color: #76b900;
+    background: rgba(118, 185, 0, 0.18);
+}
+
+.generate-button:disabled {
+    cursor: wait;
+    opacity: 0.65;
+}
+
+.generator-message {
+    min-height: 18px;
+    margin: 9px 0 0;
+    color: #a1a1aa;
+    font-size: 0.75rem;
+    line-height: 1.45;
+}
+
+.generated-object {
+    position: relative;
+    margin-top: 10px;
+    padding: 13px;
+    border: 1px solid rgba(118, 185, 0, 0.3);
+    border-radius: 10px;
+    background: rgba(118, 185, 0, 0.06);
+}
+
+.generated-object > div span,
+.generated-object > div strong {
+    display: block;
+}
+
+.generated-object > div span {
+    color: #71717a;
+    font-size: 0.68rem;
+}
+
+.generated-object > div strong {
+    margin-top: 2px;
+    padding-right: 90px;
+    color: #e4e4e7;
+    font-size: 0.88rem;
+}
+
+.generated-object p {
+    margin: 8px 0 0;
+    color: #a1a1aa;
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+.parts-badge {
+    position: absolute;
+    top: 13px;
+    right: 13px;
+    color: #a3e635;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.experimental-note {
+    margin: 10px 0 0;
+    color: #71717a;
+    font-size: 0.7rem;
+    line-height: 1.45;
+}
+
 .file-field {
     display: flex;
     align-items: center;

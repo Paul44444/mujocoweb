@@ -323,6 +323,28 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           </div>
         </div>
 
+        <section class="setup-section ai-builder">
+          <div class="setup-section-heading">
+            <span class="section-number">AI</span>
+            <div><h3>Create an object with AI</h3><p>Describe a graspable object in your own words.</p></div>
+          </div>
+          <label class="field-label" for="objectPrompt">What should the hand manipulate?</label>
+          <textarea id="objectPrompt" class="setup-input object-prompt" maxlength="600" rows="4" placeholder="For example: A small red dumbbell with blue rounded ends"></textarea>
+          <div class="prompt-examples" aria-label="Example descriptions">
+            <button type="button" data-prompt="A small red cube with softly rounded proportions">Red cube</button>
+            <button type="button" data-prompt="A miniature dumbbell with a silver handle and two blue ends">Dumbbell</button>
+            <button type="button" data-prompt="A yellow toy rocket with a pointed nose and small side boosters">Toy rocket</button>
+          </div>
+          <button id="generateObjectButton" class="generate-button" type="button">Generate object</button>
+          <p id="generatorMessage" class="generator-message" aria-live="polite"></p>
+          <div id="generatedObjectCard" class="generated-object" hidden>
+            <div><span>Generated design</span><strong id="generatedObjectName"></strong></div>
+            <p id="generatedObjectSummary"></p>
+            <span id="generatedObjectParts" class="parts-badge"></span>
+          </div>
+          <p class="experimental-note">Experimental: the existing policy was trained on its original object, so unusual shapes may be difficult for the hand.</p>
+        </section>
+
         <section class="setup-section">
           <div class="setup-section-heading">
             <span class="section-number">01</span>
@@ -423,6 +445,13 @@ const fileValidationMessage = document.querySelector<HTMLParagraphElement>("#fil
 const robotPreset = document.querySelector<HTMLSelectElement>("#robotPreset")!;
 const policyPreset = document.querySelector<HTMLSelectElement>("#policyPreset")!;
 const interactionHint = document.querySelector<HTMLElement>("#interactionHint")!;
+const objectPrompt = document.querySelector<HTMLTextAreaElement>("#objectPrompt")!;
+const generateObjectButton = document.querySelector<HTMLButtonElement>("#generateObjectButton")!;
+const generatorMessage = document.querySelector<HTMLParagraphElement>("#generatorMessage")!;
+const generatedObjectCard = document.querySelector<HTMLDivElement>("#generatedObjectCard")!;
+const generatedObjectName = document.querySelector<HTMLElement>("#generatedObjectName")!;
+const generatedObjectSummary = document.querySelector<HTMLParagraphElement>("#generatedObjectSummary")!;
+const generatedObjectParts = document.querySelector<HTMLElement>("#generatedObjectParts")!;
 
 let socket: WebSocket | null = null;
 let currentImageUrl: string | null = null;
@@ -470,7 +499,63 @@ const taskCatalog = {
 } as const;
 
 type TaskId = keyof typeof taskCatalog;
+type ObjectPart = {
+    shape: "sphere" | "box" | "capsule" | "cylinder" | "ellipsoid";
+    size: number[];
+    position: number[];
+    euler: number[];
+    rgba: number[];
+    mass: number;
+};
+type GeneratedObject = {
+    name: string;
+    summary: string;
+    parts: ObjectPart[];
+    generator?: string;
+};
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
+let generatedObject: GeneratedObject | null = null;
+
+function showGeneratedObject(): void {
+    if (!generatedObject) {
+        generatedObjectCard.hidden = true;
+        return;
+    }
+    generatedObjectName.textContent = generatedObject.name;
+    generatedObjectSummary.textContent = generatedObject.summary;
+    generatedObjectParts.textContent = `${generatedObject.parts.length} primitive${generatedObject.parts.length === 1 ? "" : "s"}`;
+    generatedObjectCard.hidden = false;
+}
+
+async function generateObject(): Promise<void> {
+    const description = objectPrompt.value.trim();
+    if (description.length < 3) {
+        generatorMessage.textContent = "Please describe the object in a little more detail.";
+        objectPrompt.focus();
+        return;
+    }
+    generateObjectButton.disabled = true;
+    generateObjectButton.textContent = "Designing…";
+    generatorMessage.textContent = "The AI is translating your idea into MuJoCo geometry.";
+    try {
+        const response = await fetch("https://mujocoweb-backend.onrender.com/api/objects/generate", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({description}),
+        });
+        const data = await response.json() as GeneratedObject & {detail?: string};
+        if (!response.ok) throw new Error(data.detail || "Object generation failed.");
+        generatedObject = data;
+        populateTask("relocate");
+        showGeneratedObject();
+        generatorMessage.textContent = "Ready. Apply the configuration, then start the simulation.";
+    } catch (error) {
+        generatorMessage.textContent = error instanceof Error ? error.message : "Object generation failed.";
+    } finally {
+        generateObjectButton.disabled = false;
+        generateObjectButton.textContent = "Generate object";
+    }
+}
 
 function taskIdFromPreset(value: string): TaskId {
     const taskId = value.replace("adroit-", "") as TaskId;
@@ -537,6 +622,9 @@ function applyConfiguration(): void {
     policyFileDisplay.textContent = policyFile;
     const task = taskCatalog[selectedTaskId];
     configurationSummary.textContent = `${task.name} · ${policyFile}`;
+    if (generatedObject && selectedTaskId === "relocate") {
+        configurationSummary.textContent = `${task.name} · ${generatedObject.name}`;
+    }
     interactionHint.textContent = task.interactive
         ? "Click on the simulation window to set target positions for the robotic hand"
         : `${task.name} runs autonomously with its trained DAPG policy`;
@@ -544,23 +632,30 @@ function applyConfiguration(): void {
         taskId: selectedTaskId,
         robotFile,
         policyFile,
+        generatedObject,
     }));
 }
 
 function resetConfiguration(): void {
+    generatedObject = null;
+    objectPrompt.value = "";
+    generatorMessage.textContent = "";
+    showGeneratedObject();
     populateTask("relocate");
 }
 
 try {
     const storedConfiguration = localStorage.getItem("mujocoweb-configuration");
     if (storedConfiguration) {
-        const parsed = JSON.parse(storedConfiguration) as Partial<typeof defaultConfiguration>;
+        const parsed = JSON.parse(storedConfiguration) as Partial<typeof defaultConfiguration> & {generatedObject?: GeneratedObject};
         const storedTask = parsed.taskId && parsed.taskId in taskCatalog
             ? parsed.taskId as TaskId
             : "relocate";
         populateTask(storedTask);
         robotFileInput.value = parsed.robotFile ?? taskCatalog[storedTask].robotFile;
         policyFileInput.value = parsed.policyFile ?? taskCatalog[storedTask].policyFile;
+        generatedObject = parsed.generatedObject ?? null;
+        showGeneratedObject();
         applyConfiguration();
     }
 } catch {
@@ -624,6 +719,9 @@ function connectToSimulation(): void {
         "wss://mujocoweb-backend.onrender.com/ws/simulation",
     );
     websocketUrl.searchParams.set("task", selectedTaskId);
+    if (generatedObject && selectedTaskId === "relocate") {
+        websocketUrl.searchParams.set("object", JSON.stringify(generatedObject));
+    }
 
     console.log("Connecting to WebSocket:", websocketUrl);
     socket = new WebSocket(websocketUrl.toString());
@@ -755,6 +853,13 @@ editConfigurationButton.addEventListener("click", openSetupPanel);
 closeSetupButton.addEventListener("click", closeSetupPanel);
 setupOverlay.addEventListener("click", closeSetupPanel);
 resetSetupButton.addEventListener("click", resetConfiguration);
+generateObjectButton.addEventListener("click", generateObject);
+document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach((button) => {
+    button.addEventListener("click", () => {
+        objectPrompt.value = button.dataset.prompt ?? "";
+        objectPrompt.focus();
+    });
+});
 robotPreset.addEventListener("change", () => {
     populateTask(taskIdFromPreset(robotPreset.value));
 });
