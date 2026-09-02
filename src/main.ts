@@ -1,5 +1,47 @@
 import "./style.css";
 
+const RENDER_BACKEND_URL = "https://mujocoweb-backend.onrender.com";
+
+function normalizeBackendUrl(value: string): string {
+    const url = new URL(value);
+    if (!(["http:", "https:"].includes(url.protocol))) {
+        throw new Error("Backend URL must use HTTP or HTTPS.");
+    }
+    return url.toString().replace(/\/$/, "");
+}
+
+function resolveBackendUrl(): string {
+    const query = new URLSearchParams(window.location.search).get("backend");
+    if (query === "render") {
+        localStorage.removeItem("mujocoweb-backend-url");
+    } else if (query) {
+        try {
+            localStorage.setItem("mujocoweb-backend-url", normalizeBackendUrl(query));
+        } catch (error) {
+            console.warn("Ignoring invalid backend URL:", error);
+        }
+    }
+    const configured = import.meta.env.VITE_BACKEND_URL?.trim();
+    const stored = localStorage.getItem("mujocoweb-backend-url");
+    try {
+        return normalizeBackendUrl(stored || configured || RENDER_BACKEND_URL);
+    } catch {
+        return RENDER_BACKEND_URL;
+    }
+}
+
+const backendUrl = resolveBackendUrl();
+
+function backendHttpUrl(path: string): string {
+    return `${backendUrl}${path}`;
+}
+
+function backendWebSocketUrl(path: string): URL {
+    const url = new URL(path, `${backendUrl}/`);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return url;
+}
+
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <nav class="navbar">
     <div class="nav-content">
@@ -538,7 +580,7 @@ async function generateObject(): Promise<void> {
     generateObjectButton.textContent = "Designing…";
     generatorMessage.textContent = "The AI is translating your idea into MuJoCo geometry.";
     try {
-        const response = await fetch("https://mujocoweb-backend.onrender.com/api/objects/generate", {
+        const response = await fetch(backendHttpUrl("/api/objects/generate"), {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({description}),
@@ -715,9 +757,7 @@ function connectToSimulation(): void {
     setStatus("Connecting to Python backend…", "connecting");
     startButton.disabled = true;
 
-    const websocketUrl = new URL(
-        "wss://mujocoweb-backend.onrender.com/ws/simulation",
-    );
+    const websocketUrl = backendWebSocketUrl("/ws/simulation");
     websocketUrl.searchParams.set("task", selectedTaskId);
     if (generatedObject && selectedTaskId === "relocate") {
         websocketUrl.searchParams.set("object", JSON.stringify(generatedObject));
