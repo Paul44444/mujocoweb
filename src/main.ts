@@ -90,6 +90,9 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               </svg>
               Experiment setup
             </button>
+            <button id="pauseButton" class="media-button" type="button" disabled aria-label="Pause simulation" title="Pause simulation">
+              <span aria-hidden="true">Ⅱ</span>
+            </button>
             <button id="startButton">Start Simulation</button>
           </div>
         </div>
@@ -105,6 +108,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               <polygon points="5 3 19 12 5 21 5 3"/>
             </svg>
             <p>Press "Start Simulation" to begin</p>
+          </div>
+
+          <div class="camera-controls" aria-label="Camera controls">
+            <span>Drag to orbit · Scroll to zoom</span>
+            <button id="resetCameraButton" type="button" disabled>Reset view</button>
           </div>
         </div>
 
@@ -449,6 +457,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
 const startButton =
     document.querySelector<HTMLButtonElement>("#startButton")!;
+const pauseButton = document.querySelector<HTMLButtonElement>("#pauseButton")!;
+const resetCameraButton = document.querySelector<HTMLButtonElement>("#resetCameraButton")!;
 
 const simulationImage =
     document.querySelector<HTMLImageElement>("#simulationImage")!;
@@ -501,6 +511,9 @@ const generatedObjectParts = document.querySelector<HTMLElement>("#generatedObje
 let socket: WebSocket | null = null;
 let currentImageUrl: string | null = null;
 let lastFocusedElement: HTMLElement | null = null;
+let isPaused = false;
+let cameraDrag: {pointerId: number; x: number; y: number; moved: boolean} | null = null;
+let suppressSimulationClick = false;
 
 const defaultConfiguration = {
     taskId: "relocate",
@@ -716,6 +729,10 @@ function setStatus(
 }
 
 function handleSimulationClick(event: MouseEvent): void {
+    if (suppressSimulationClick) {
+        suppressSimulationClick = false;
+        return;
+    }
     if (!taskCatalog[selectedTaskId].interactive) {
         return;
     }
@@ -748,6 +765,54 @@ function handleSimulationClick(event: MouseEvent): void {
     console.log("Sent target position:", { u, v });
 }
 
+function sendSimulationCommand(command: Record<string, unknown>): boolean {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify(command));
+    return true;
+}
+
+function togglePause(): void {
+    const nextPaused = !isPaused;
+    if (!sendSimulationCommand({type: "set_paused", paused: nextPaused})) return;
+    isPaused = nextPaused;
+    pauseButton.querySelector("span")!.textContent = isPaused ? "▶" : "Ⅱ";
+    pauseButton.setAttribute("aria-label", isPaused ? "Resume simulation" : "Pause simulation");
+    pauseButton.title = isPaused ? "Resume simulation" : "Pause simulation";
+    setStatus(isPaused ? "Simulation paused" : "Simulation running", "connected");
+}
+
+function beginCameraDrag(event: PointerEvent): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN || event.button !== 0) return;
+    cameraDrag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false};
+    simulationImage.setPointerCapture(event.pointerId);
+}
+
+function updateCameraDrag(event: PointerEvent): void {
+    if (!cameraDrag || cameraDrag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - cameraDrag.x;
+    const deltaY = event.clientY - cameraDrag.y;
+    cameraDrag.x = event.clientX;
+    cameraDrag.y = event.clientY;
+    if (Math.abs(deltaX) + Math.abs(deltaY) < 1) return;
+    cameraDrag.moved = true;
+    sendSimulationCommand({type: "camera_orbit", deltaX, deltaY});
+}
+
+function endCameraDrag(event: PointerEvent): void {
+    if (!cameraDrag || cameraDrag.pointerId !== event.pointerId) return;
+    suppressSimulationClick = cameraDrag.moved;
+    cameraDrag = null;
+    if (simulationImage.hasPointerCapture(event.pointerId)) {
+        simulationImage.releasePointerCapture(event.pointerId);
+    }
+}
+
+function zoomCamera(event: WheelEvent): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    event.preventDefault();
+    sendSimulationCommand({type: "camera_zoom", delta: Math.sign(event.deltaY)});
+}
+
 function connectToSimulation(): void {
     if (
         socket &&
@@ -775,6 +840,8 @@ function connectToSimulation(): void {
         console.log("WebSocket opened:", websocketUrl);
         setStatus("Connected", "connected");
         startButton.textContent = "Simulation running";
+        pauseButton.disabled = false;
+        resetCameraButton.disabled = false;
     };
 
     socket.onerror = (event) => {
@@ -790,6 +857,10 @@ function connectToSimulation(): void {
         });
 
         socket = null;
+        isPaused = false;
+        pauseButton.disabled = true;
+        pauseButton.querySelector("span")!.textContent = "Ⅱ";
+        resetCameraButton.disabled = true;
         startButton.disabled = false;
         startButton.textContent = "Start simulation";
 
@@ -891,6 +962,13 @@ navTabs.forEach((tab) => {
 
 startButton.addEventListener("click", connectToSimulation);
 simulationImage.addEventListener("click", handleSimulationClick);
+simulationImage.addEventListener("pointerdown", beginCameraDrag);
+simulationImage.addEventListener("pointermove", updateCameraDrag);
+simulationImage.addEventListener("pointerup", endCameraDrag);
+simulationImage.addEventListener("pointercancel", endCameraDrag);
+simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
+pauseButton.addEventListener("click", togglePause);
+resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 setupButton.addEventListener("click", openSetupPanel);
 editConfigurationButton.addEventListener("click", openSetupPanel);
 closeSetupButton.addEventListener("click", closeSetupPanel);

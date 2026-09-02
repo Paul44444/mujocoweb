@@ -219,6 +219,33 @@ h1 {
     background: rgba(63, 63, 70, 0.8);
 }
 
+.media-button {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    border: 1px solid #3f3f46;
+    border-radius: 50%;
+    place-items: center;
+    color: #f4f4f5;
+    background: rgba(39, 39, 42, 0.8);
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.media-button span {
+    transform: translateY(-1px);
+}
+
+.media-button:hover:not(:disabled) {
+    border-color: #76b900;
+    background: rgba(118, 185, 0, 0.15);
+}
+
+.media-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.38;
+}
+
 .status-indicator {
     width: 10px;
     height: 10px;
@@ -293,6 +320,12 @@ h1 {
     object-fit: contain;
     opacity: 0;
     cursor: crosshair;
+    touch-action: none;
+    user-select: none;
+}
+
+#simulationImage:active {
+    cursor: grabbing;
 }
 
 #simulationImage.visible {
@@ -317,6 +350,43 @@ h1 {
 
 .placeholder p {
     margin: 0;
+}
+
+.camera-controls {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 8px 7px 11px;
+    border: 1px solid rgba(63, 63, 70, 0.8);
+    border-radius: 10px;
+    color: #a1a1aa;
+    background: rgba(9, 9, 11, 0.78);
+    backdrop-filter: blur(8px);
+    font-size: 0.7rem;
+}
+
+.camera-controls button {
+    border: 0;
+    border-radius: 7px;
+    padding: 6px 8px;
+    color: #d4d4d8;
+    background: #27272a;
+    font-size: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.camera-controls button:hover:not(:disabled) {
+    color: #a3e635;
+    background: #3f3f46;
+}
+
+.camera-controls button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
 }
 
 .placeholder.hidden {
