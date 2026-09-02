@@ -38,6 +38,13 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
           <div class="controls">
             <span id="statusIndicator" class="status-indicator"></span>
+            <button id="setupButton" class="setup-button" type="button" aria-haspopup="dialog" aria-controls="setupPanel">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.52-1H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06A1.7 1.7 0 0 0 8.97 4.6 1.7 1.7 0 0 0 10 3.08V3h4v.08a1.7 1.7 0 0 0 1.06 1.52 1.7 1.7 0 0 0 1.88-.34L17 4.2 19.83 7l-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/>
+              </svg>
+              Experiment setup
+            </button>
             <button id="startButton">Start Simulation</button>
           </div>
         </div>
@@ -61,6 +68,12 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <span>Step: <strong id="stepValue">—</strong></span>
           <span>Reward: <strong id="rewardValue">—</strong></span>
           <span>Simulation Time: <strong id="timeValue">—</strong></span>
+        </div>
+
+        <div class="active-configuration" aria-label="Active experiment configuration">
+          <span class="configuration-label">Configuration</span>
+          <span id="configurationSummary">Adroit Hand · DAPG Relocation</span>
+          <button id="editConfigurationButton" type="button">Edit</button>
         </div>
       </section>
 
@@ -286,6 +299,83 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       </div>
     </section>
   </main>
+
+  <div id="setupOverlay" class="setup-overlay" hidden></div>
+  <aside id="setupPanel" class="setup-panel" role="dialog" aria-modal="true" aria-labelledby="setupTitle" hidden>
+    <form id="setupForm" class="setup-form">
+      <header class="setup-panel-header">
+        <div>
+          <p class="panel-eyebrow">Simulation configuration</p>
+          <h2 id="setupTitle">Experiment setup</h2>
+          <p>Choose what the simulator should load for the next session.</p>
+        </div>
+        <button id="closeSetupButton" class="icon-button" type="button" aria-label="Close experiment setup">×</button>
+      </header>
+
+      <div class="setup-panel-content">
+        <div class="preview-notice" role="note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+          </svg>
+          <div>
+            <strong>Configuration preview</strong>
+            <span>Selections are saved in this browser. Backend switching will be connected in the next step.</span>
+          </div>
+        </div>
+
+        <section class="setup-section">
+          <div class="setup-section-heading">
+            <span class="section-number">01</span>
+            <div><h3>Robot</h3><p>The physical model and task environment.</p></div>
+          </div>
+          <label class="field-label" for="robotPreset">Robot model</label>
+          <select id="robotPreset" class="setup-select">
+            <option value="adroit-relocate">Adroit Hand — Object relocation</option>
+            <option value="adroit-pen" disabled>Adroit Hand — Pen manipulation (coming soon)</option>
+            <option value="sawyer" disabled>Sawyer Arm (coming soon)</option>
+          </select>
+          <div class="file-field">
+            <div class="file-icon">XML</div>
+            <div class="file-copy"><span>Model file</span><strong id="robotFileDisplay">relocate_clean.xml</strong></div>
+            <span class="file-status">Ready</span>
+          </div>
+        </section>
+
+        <section class="setup-section">
+          <div class="setup-section-heading">
+            <span class="section-number">02</span>
+            <div><h3>Policy</h3><p>The controller used to generate hand actions.</p></div>
+          </div>
+          <label class="field-label" for="policyPreset">Policy</label>
+          <select id="policyPreset" class="setup-select">
+            <option value="dapg-relocate">DAPG — Relocation policy</option>
+            <option value="manual" disabled>Manual control (coming soon)</option>
+            <option value="random" disabled>Random baseline (coming soon)</option>
+          </select>
+          <div class="file-field">
+            <div class="file-icon">PKL</div>
+            <div class="file-copy"><span>Checkpoint</span><strong id="policyFileDisplay">policy_paul.pkl</strong></div>
+            <span class="file-status">Compatible</span>
+          </div>
+        </section>
+
+        <details class="advanced-settings">
+          <summary>Advanced file settings</summary>
+          <p>Stage different filenames without exposing server paths. The backend will validate these before loading them.</p>
+          <label class="field-label" for="robotFileInput">MuJoCo model filename</label>
+          <input id="robotFileInput" class="setup-input" name="robotFile" value="relocate_clean.xml" autocomplete="off" spellcheck="false" />
+          <label class="field-label" for="policyFileInput">Policy filename</label>
+          <input id="policyFileInput" class="setup-input" name="policyFile" value="policy_paul.pkl" autocomplete="off" spellcheck="false" />
+          <p id="fileValidationMessage" class="validation-message" aria-live="polite"></p>
+        </details>
+      </div>
+
+      <footer class="setup-panel-footer">
+        <button id="resetSetupButton" class="secondary-button" type="button">Reset</button>
+        <button class="apply-button" type="submit">Apply configuration</button>
+      </footer>
+    </form>
+  </aside>
 `;
 
 const startButton =
@@ -315,8 +405,98 @@ const rewardValue =
 const timeValue =
     document.querySelector<HTMLElement>("#timeValue")!;
 
+const setupButton = document.querySelector<HTMLButtonElement>("#setupButton")!;
+const editConfigurationButton = document.querySelector<HTMLButtonElement>("#editConfigurationButton")!;
+const closeSetupButton = document.querySelector<HTMLButtonElement>("#closeSetupButton")!;
+const resetSetupButton = document.querySelector<HTMLButtonElement>("#resetSetupButton")!;
+const setupPanel = document.querySelector<HTMLElement>("#setupPanel")!;
+const setupOverlay = document.querySelector<HTMLDivElement>("#setupOverlay")!;
+const setupForm = document.querySelector<HTMLFormElement>("#setupForm")!;
+const robotFileInput = document.querySelector<HTMLInputElement>("#robotFileInput")!;
+const policyFileInput = document.querySelector<HTMLInputElement>("#policyFileInput")!;
+const robotFileDisplay = document.querySelector<HTMLElement>("#robotFileDisplay")!;
+const policyFileDisplay = document.querySelector<HTMLElement>("#policyFileDisplay")!;
+const configurationSummary = document.querySelector<HTMLElement>("#configurationSummary")!;
+const fileValidationMessage = document.querySelector<HTMLParagraphElement>("#fileValidationMessage")!;
+
 let socket: WebSocket | null = null;
 let currentImageUrl: string | null = null;
+let lastFocusedElement: HTMLElement | null = null;
+
+const defaultConfiguration = {
+    robotFile: "relocate_clean.xml",
+    policyFile: "policy_paul.pkl",
+};
+
+function openSetupPanel(): void {
+    lastFocusedElement = document.activeElement as HTMLElement;
+    setupPanel.hidden = false;
+    setupOverlay.hidden = false;
+    document.body.classList.add("panel-open");
+    requestAnimationFrame(() => {
+        setupPanel.classList.add("open");
+        setupOverlay.classList.add("open");
+        closeSetupButton.focus();
+    });
+}
+
+function closeSetupPanel(): void {
+    setupPanel.classList.remove("open");
+    setupOverlay.classList.remove("open");
+    document.body.classList.remove("panel-open");
+    window.setTimeout(() => {
+        setupPanel.hidden = true;
+        setupOverlay.hidden = true;
+        lastFocusedElement?.focus();
+    }, 220);
+}
+
+function validateConfiguration(): boolean {
+    const robotFile = robotFileInput.value.trim();
+    const policyFile = policyFileInput.value.trim();
+
+    if (!robotFile.toLowerCase().endsWith(".xml")) {
+        fileValidationMessage.textContent = "The robot model must be an XML file.";
+        robotFileInput.focus();
+        return false;
+    }
+
+    if (!/\.(pkl|pickle|pt|pth)$/i.test(policyFile)) {
+        fileValidationMessage.textContent = "Use a .pkl, .pickle, .pt, or .pth policy file.";
+        policyFileInput.focus();
+        return false;
+    }
+
+    fileValidationMessage.textContent = "";
+    return true;
+}
+
+function applyConfiguration(): void {
+    const robotFile = robotFileInput.value.trim();
+    const policyFile = policyFileInput.value.trim();
+    robotFileDisplay.textContent = robotFile;
+    policyFileDisplay.textContent = policyFile;
+    configurationSummary.textContent = `${robotFile} · ${policyFile}`;
+    localStorage.setItem("mujocoweb-configuration", JSON.stringify({ robotFile, policyFile }));
+}
+
+function resetConfiguration(): void {
+    robotFileInput.value = defaultConfiguration.robotFile;
+    policyFileInput.value = defaultConfiguration.policyFile;
+    fileValidationMessage.textContent = "";
+}
+
+try {
+    const storedConfiguration = localStorage.getItem("mujocoweb-configuration");
+    if (storedConfiguration) {
+        const parsed = JSON.parse(storedConfiguration) as Partial<typeof defaultConfiguration>;
+        robotFileInput.value = parsed.robotFile ?? defaultConfiguration.robotFile;
+        policyFileInput.value = parsed.policyFile ?? defaultConfiguration.policyFile;
+        applyConfiguration();
+    }
+} catch {
+    localStorage.removeItem("mujocoweb-configuration");
+}
 
 function setStatus(
     text: string,
@@ -495,6 +675,24 @@ navTabs.forEach((tab) => {
 
 startButton.addEventListener("click", connectToSimulation);
 simulationImage.addEventListener("click", handleSimulationClick);
+setupButton.addEventListener("click", openSetupPanel);
+editConfigurationButton.addEventListener("click", openSetupPanel);
+closeSetupButton.addEventListener("click", closeSetupPanel);
+setupOverlay.addEventListener("click", closeSetupPanel);
+resetSetupButton.addEventListener("click", resetConfiguration);
+
+setupForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!validateConfiguration()) return;
+    applyConfiguration();
+    closeSetupPanel();
+});
+
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && setupPanel.classList.contains("open")) {
+        closeSetupPanel();
+    }
+});
 
 window.addEventListener("beforeunload", () => {
     socket?.close();
