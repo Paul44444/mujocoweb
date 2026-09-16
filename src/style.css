@@ -883,6 +883,79 @@ body.panel-open {
     width: auto;
 }
 
+.code-editor-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.code-editor-overlay[hidden] {
+    display: none;
+}
+
+.code-editor-dialog {
+    width: min(1100px, 100%);
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+    border: 1px solid #3f3f46;
+    border-radius: 16px;
+    background: #18181b;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+
+.code-editor-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 22px 26px;
+    border-bottom: 1px solid #3f3f46;
+}
+
+.code-editor-header h2 {
+    margin: 4px 0 8px;
+}
+
+.code-editor-header p:last-child {
+    margin: 0;
+    color: #fbbf24;
+    font-size: 0.82rem;
+}
+
+.code-editor-body {
+    padding: 24px 26px;
+}
+
+.code-editor-body > .setup-input {
+    width: 100%;
+}
+
+.code-editor-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0;
+}
+
+.code-editor-toolbar .setup-select {
+    flex: 1 1 240px;
+    min-width: 0;
+}
+
+.code-editor-content {
+    min-height: min(55vh, 650px);
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    tab-size: 4;
+    white-space: pre;
+}
+
 .validation-message {
     min-height: 18px;
     margin: 8px 0 0 !important;

@@ -112,6 +112,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               </svg>
               Experiment setup
             </button>
+            <button id="codeEditorButton" class="setup-button" type="button" aria-haspopup="dialog" aria-controls="codeEditorDialog">Code editor</button>
             <button id="startButton" type="button">
               <span class="playback-icon play-icon" aria-hidden="true"></span>
               <span class="playback-label">Start simulation</span>
@@ -487,6 +488,36 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       </footer>
     </form>
   </aside>
+
+  <div id="codeEditorOverlay" class="code-editor-overlay" hidden>
+    <section id="codeEditorDialog" class="code-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="codeEditorTitle">
+      <header class="code-editor-header">
+        <div>
+          <p class="panel-eyebrow">Advanced · authenticated</p>
+          <h2 id="codeEditorTitle">MuJoCo source editor</h2>
+          <p>Changes to Python run on the backend computer. A syntax check is not a security check.</p>
+        </div>
+        <button id="closeCodeEditorButton" class="icon-button" type="button" aria-label="Close code editor">×</button>
+      </header>
+      <div class="code-editor-body">
+        <label class="field-label" for="editorPassword">Editor password</label>
+        <input id="editorPassword" class="setup-input" type="password" autocomplete="off" placeholder="Enter the private editor password" />
+        <div class="code-editor-toolbar">
+          <select id="editorFileSelect" class="setup-select" aria-label="Source file" disabled><option>Select a file</option></select>
+          <button id="editorConnectButton" class="secondary-button" type="button">Connect</button>
+          <button id="editorLoadButton" class="secondary-button" type="button" disabled>Reload file</button>
+        </div>
+        <p id="editorDescription" class="experimental-note"></p>
+        <textarea id="editorContent" class="setup-input code-editor-content" spellcheck="false" aria-label="Source code" disabled></textarea>
+        <div class="code-editor-toolbar">
+          <button id="editorSaveButton" class="apply-button" type="button" disabled>Save and restart backend</button>
+          <select id="editorRevisionSelect" class="setup-select" aria-label="Backup version" disabled><option>Choose a backup</option></select>
+          <button id="editorRestoreButton" class="secondary-button" type="button" disabled>Restore backup</button>
+        </div>
+        <p id="editorMessage" class="generator-message" aria-live="polite"></p>
+      </div>
+    </section>
+  </div>
 `;
 
 const startButton =
@@ -540,12 +571,27 @@ const generatedObjectCard = document.querySelector<HTMLDivElement>("#generatedOb
 const generatedObjectName = document.querySelector<HTMLElement>("#generatedObjectName")!;
 const generatedObjectSummary = document.querySelector<HTMLParagraphElement>("#generatedObjectSummary")!;
 const generatedObjectParts = document.querySelector<HTMLElement>("#generatedObjectParts")!;
+const codeEditorButton = document.querySelector<HTMLButtonElement>("#codeEditorButton")!;
+const codeEditorOverlay = document.querySelector<HTMLDivElement>("#codeEditorOverlay")!;
+const closeCodeEditorButton = document.querySelector<HTMLButtonElement>("#closeCodeEditorButton")!;
+const editorPassword = document.querySelector<HTMLInputElement>("#editorPassword")!;
+const editorFileSelect = document.querySelector<HTMLSelectElement>("#editorFileSelect")!;
+const editorConnectButton = document.querySelector<HTMLButtonElement>("#editorConnectButton")!;
+const editorLoadButton = document.querySelector<HTMLButtonElement>("#editorLoadButton")!;
+const editorContent = document.querySelector<HTMLTextAreaElement>("#editorContent")!;
+const editorSaveButton = document.querySelector<HTMLButtonElement>("#editorSaveButton")!;
+const editorRevisionSelect = document.querySelector<HTMLSelectElement>("#editorRevisionSelect")!;
+const editorRestoreButton = document.querySelector<HTMLButtonElement>("#editorRestoreButton")!;
+const editorMessage = document.querySelector<HTMLParagraphElement>("#editorMessage")!;
+const editorDescription = document.querySelector<HTMLParagraphElement>("#editorDescription")!;
 const objectCodeInput = document.querySelector<HTMLTextAreaElement>("#objectCodeInput")!;
 const objectCodeMessage = document.querySelector<HTMLParagraphElement>("#objectCodeMessage")!;
 const loadObjectCodeButton = document.querySelector<HTMLButtonElement>("#loadObjectCodeButton")!;
 const applyObjectCodeButton = document.querySelector<HTMLButtonElement>("#applyObjectCodeButton")!;
 
 let socket: WebSocket | null = null;
+let editorToken = "";
+let editorRevision = "";
 let currentImageUrl: string | null = null;
 let lastFocusedElement: HTMLElement | null = null;
 let isPaused = false;
@@ -679,6 +725,139 @@ objectCodeInput.value = localStorage.getItem("mujocoweb-object-code-draft") ?? J
 objectCodeInput.addEventListener("input", () => localStorage.setItem("mujocoweb-object-code-draft", objectCodeInput.value));
 loadObjectCodeButton.addEventListener("click", loadCurrentObjectCode);
 applyObjectCodeButton.addEventListener("click", applyObjectCode);
+
+type EditorFile = {id: string; name: string; description: string};
+type EditorDocument = EditorFile & {content: string; sha256: string; revisions: string[]};
+
+async function editorRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+    await refreshPublishedBackendUrl();
+    const response = await fetch(backendHttpUrl(`/api/editor${path}`), {
+        ...options,
+        headers: {
+            "Authorization": `Bearer ${editorToken}`,
+            ...(options.body ? {"Content-Type": "application/json"} : {}),
+        },
+    });
+    if (!response.ok) {
+        let message = `Editor request failed (${response.status}).`;
+        try {
+            const error = await response.json() as {detail?: string};
+            if (error.detail) message = error.detail;
+        } catch { /* Keep the HTTP status message. */ }
+        throw new Error(message);
+    }
+    return response.json() as Promise<T>;
+}
+
+function editorStatus(message: string): void {
+    editorMessage.textContent = message;
+}
+
+async function connectEditor(): Promise<void> {
+    editorToken = editorPassword.value.trim();
+    if (!editorToken) {
+        editorStatus("Enter the private editor password first.");
+        return;
+    }
+    editorConnectButton.disabled = true;
+    editorStatus("Connecting to the editor…");
+    try {
+        const result = await editorRequest<{files: EditorFile[]}>("/files");
+        editorFileSelect.replaceChildren(...result.files.map((file) => {
+            const option = document.createElement("option");
+            option.value = file.id;
+            option.textContent = `${file.name} — ${file.description}`;
+            return option;
+        }));
+        editorFileSelect.disabled = false;
+        editorLoadButton.disabled = false;
+        editorStatus("Connected. Select a file to edit.");
+        await loadEditorFile();
+    } catch (error) {
+        editorToken = "";
+        editorStatus(error instanceof Error ? error.message : "Could not connect to editor.");
+    } finally {
+        editorConnectButton.disabled = false;
+    }
+}
+
+async function loadEditorFile(): Promise<void> {
+    const fileId = editorFileSelect.value;
+    if (!fileId || !editorToken) return;
+    editorStatus("Loading source file…");
+    try {
+        const file = await editorRequest<EditorDocument>(`/files/${encodeURIComponent(fileId)}`);
+        editorContent.value = file.content;
+        editorRevision = file.sha256;
+        editorDescription.textContent = `${file.name} · ${file.description}`;
+        editorRevisionSelect.replaceChildren(...file.revisions.map((revision) => {
+            const option = document.createElement("option");
+            option.value = revision;
+            option.textContent = revision === "original" ? "Original before browser edits" : revision;
+            return option;
+        }));
+        editorContent.disabled = false;
+        editorSaveButton.disabled = false;
+        editorRevisionSelect.disabled = file.revisions.length === 0;
+        editorRestoreButton.disabled = file.revisions.length === 0;
+        editorStatus("Loaded. Saving creates a backup and restarts the backend.");
+    } catch (error) {
+        editorStatus(error instanceof Error ? error.message : "Could not load source file.");
+    }
+}
+
+async function saveEditorFile(): Promise<void> {
+    if (!editorRevision || !editorToken) return;
+    if (!window.confirm("Save this source file and restart the backend? The code will run with this computer's user permissions.")) return;
+    editorSaveButton.disabled = true;
+    editorStatus("Validating and saving…");
+    try {
+        await editorRequest<{sha256: string; restarting: boolean}>(`/files/${encodeURIComponent(editorFileSelect.value)}`, {
+            method: "PUT",
+            body: JSON.stringify({content: editorContent.value, expected_sha256: editorRevision}),
+        });
+        editorStatus("Saved. The backend is restarting; wait a few seconds, then reload this file.");
+        editorContent.disabled = true;
+    } catch (error) {
+        editorStatus(error instanceof Error ? error.message : "Could not save source file.");
+    } finally {
+        editorSaveButton.disabled = false;
+    }
+}
+
+async function restoreEditorFile(): Promise<void> {
+    const revision = editorRevisionSelect.value;
+    if (!revision || !editorRevision || !editorToken) return;
+    if (!window.confirm(`Restore ${revision === "original" ? "the original file" : revision} and restart the backend?`)) return;
+    editorRestoreButton.disabled = true;
+    editorStatus("Restoring backup…");
+    try {
+        await editorRequest(`/files/${encodeURIComponent(editorFileSelect.value)}/restore`, {
+            method: "POST",
+            body: JSON.stringify({revision, expected_sha256: editorRevision}),
+        });
+        editorStatus("Backup restored. Wait for the backend to restart, then reload this file.");
+        editorContent.disabled = true;
+    } catch (error) {
+        editorStatus(error instanceof Error ? error.message : "Could not restore backup.");
+    } finally {
+        editorRestoreButton.disabled = false;
+    }
+}
+
+codeEditorButton.addEventListener("click", () => {
+    codeEditorOverlay.hidden = false;
+    editorPassword.focus();
+});
+closeCodeEditorButton.addEventListener("click", () => { codeEditorOverlay.hidden = true; });
+codeEditorOverlay.addEventListener("click", (event) => {
+    if (event.target === codeEditorOverlay) codeEditorOverlay.hidden = true;
+});
+editorConnectButton.addEventListener("click", connectEditor);
+editorFileSelect.addEventListener("change", loadEditorFile);
+editorLoadButton.addEventListener("click", loadEditorFile);
+editorSaveButton.addEventListener("click", saveEditorFile);
+editorRestoreButton.addEventListener("click", restoreEditorFile);
 
 function showGeneratedObject(): void {
     if (!generatedObject) {
