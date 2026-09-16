@@ -460,6 +460,21 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <p id="objectCodeMessage" class="generator-message" aria-live="polite"></p>
         </details>
 
+        <details class="advanced-settings scene-editor" open>
+          <summary>Backend scene editor</summary>
+          <p>Assets and saved scenes live on the MuJoCo backend. Choose an asset to add it to the scene draft.</p>
+          <div id="sceneAssetPalette" class="scene-asset-palette">
+            <button type="button" data-scene-asset="box">▣ Cube</button>
+            <button type="button" data-scene-asset="sphere">● Sphere</button>
+            <button type="button" data-scene-asset="cylinder">▯ Cylinder</button>
+            <button type="button" data-scene-asset="hammer">⚒ Hammer</button>
+          </div>
+          <label class="field-label" for="sceneNameInput">Scene name</label>
+          <div class="scene-actions"><input id="sceneNameInput" class="setup-input" value="DAPG Relocate Start" /><button id="sceneSaveButton" class="secondary-button" type="button">Save scene</button></div>
+          <div id="sceneDraft" class="scene-draft">Start with the DAPG Relocate cube, or add an asset above.</div>
+          <p id="sceneMessage" class="generator-message" aria-live="polite"></p>
+        </details>
+
         <section class="setup-section">
           <div class="setup-section-heading">
             <span class="section-number">01</span>
@@ -606,6 +621,10 @@ const generatedObjectCard = document.querySelector<HTMLDivElement>("#generatedOb
 const generatedObjectName = document.querySelector<HTMLElement>("#generatedObjectName")!;
 const generatedObjectSummary = document.querySelector<HTMLParagraphElement>("#generatedObjectSummary")!;
 const generatedObjectParts = document.querySelector<HTMLElement>("#generatedObjectParts")!;
+const sceneNameInput = document.querySelector<HTMLInputElement>("#sceneNameInput")!;
+const sceneSaveButton = document.querySelector<HTMLButtonElement>("#sceneSaveButton")!;
+const sceneDraft = document.querySelector<HTMLElement>("#sceneDraft")!;
+const sceneMessage = document.querySelector<HTMLParagraphElement>("#sceneMessage")!;
 const codeEditorButton = document.querySelector<HTMLButtonElement>("#codeEditorButton")!;
 const codeEditorRailButton = document.querySelector<HTMLButtonElement>("#codeEditorRailButton")!;
 const codeEditorPane = document.querySelector<HTMLElement>("#codeEditorPane")!;
@@ -710,6 +729,27 @@ type GeneratedObject = {
 };
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
+const sceneAssets: {id: string; asset: string; position: number[]; rotation: number[]; scale: number[]}[] = [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03]}];
+
+function renderSceneDraft(): void {
+    sceneDraft.textContent = sceneAssets.map((item) => `${item.asset} · x ${item.position.join(", ")} · scale ${item.scale.join(", ")}`).join("\n");
+}
+
+function addSceneAsset(asset: string): void {
+    const index = sceneAssets.length + 1;
+    sceneAssets.push({id: `${asset}-${index}`, asset, position: [0.05 * index, 0, 0.04], rotation: [0, 0, 0], scale: asset === "hammer" ? [1, 1, 1] : [0.04, 0.04, 0.04]});
+    renderSceneDraft();
+}
+
+async function saveScene(): Promise<void> {
+    if (!editorToken) { sceneMessage.textContent = "Unlock the Code editor once with your password to save backend scenes."; return; }
+    sceneMessage.textContent = "Saving scene on backend…";
+    try {
+        await editorRequest(`/scenes/${encodeURIComponent(sceneNameInput.value)}`, {method: "PUT", body: JSON.stringify({name: sceneNameInput.value, assets: sceneAssets})});
+        sceneMessage.textContent = "Scene saved on backend.";
+    } catch (error) { sceneMessage.textContent = error instanceof Error ? error.message : "Could not save scene."; }
+}
+renderSceneDraft();
 
 const starterObject: GeneratedObject = {
     name: "Custom object",
@@ -1611,6 +1651,8 @@ closeSetupButton.addEventListener("click", closeSetupPanel);
 setupOverlay.addEventListener("click", closeSetupPanel);
 resetSetupButton.addEventListener("click", resetConfiguration);
 generateObjectButton.addEventListener("click", generateObject);
+document.querySelectorAll<HTMLButtonElement>("[data-scene-asset]").forEach((button) => button.addEventListener("click", () => addSceneAsset(button.dataset.sceneAsset ?? "box")));
+sceneSaveButton.addEventListener("click", () => void saveScene());
 document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach((button) => {
     button.addEventListener("click", () => {
         objectPrompt.value = button.dataset.prompt ?? "";
