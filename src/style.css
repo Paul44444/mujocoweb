@@ -1148,6 +1148,109 @@ body.panel-open {
     padding: 24px 26px;
 }
 
+.editor-workspace {
+    display: grid;
+    grid-template-columns: minmax(190px, 250px) minmax(0, 1fr);
+    gap: 18px;
+    min-height: 520px;
+}
+
+.repository-explorer {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid #3f3f46;
+    border-radius: 10px;
+    background: #111113;
+}
+
+.repository-explorer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid #3f3f46;
+    color: #d4d4d8;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.repository-explorer-header .secondary-button {
+    padding: 4px 8px;
+}
+
+.editor-tree {
+    flex: 1;
+    overflow: auto;
+    padding: 8px;
+    color: #a1a1aa;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.76rem;
+    line-height: 1.55;
+}
+
+.editor-tree-directory {
+    margin: 0;
+}
+
+.editor-tree-directory summary {
+    overflow: hidden;
+    padding: 3px 4px;
+    color: #e4e4e7;
+    cursor: pointer;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.editor-tree-directory > :not(summary) {
+    margin-left: 12px;
+}
+
+.editor-tree-file {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    padding: 3px 5px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #a1a1aa;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.editor-tree-file:hover,
+.editor-tree-file.selected {
+    background: rgba(118, 185, 0, 0.16);
+    color: #d9f99d;
+}
+
+.editor-document {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+}
+
+.editor-document > .code-editor-toolbar:first-child strong {
+    overflow: hidden;
+    color: #d4d4d8;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.78rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.editor-document .code-editor-content {
+    flex: 1;
+    min-height: 420px;
+}
+
 .code-editor-body > .setup-input {
     width: 100%;
 }
@@ -1571,6 +1674,15 @@ body.panel-open {
     .code-editor-header,
     .code-editor-body {
         padding: 14px;
+    }
+
+    .editor-workspace {
+        grid-template-columns: minmax(0, 1fr);
+        min-height: 0;
+    }
+
+    .repository-explorer {
+        height: 210px;
     }
 
     .code-editor-header {

@@ -523,16 +523,24 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <button id="closeCodeEditorButton" class="secondary-button" type="button" aria-label="Return to simulation">← Simulation</button>
       </header>
       <div class="code-editor-body">
-        <div class="code-editor-toolbar">
-          <select id="editorFileSelect" class="setup-select" aria-label="Source file" disabled><option>Select a file</option></select>
-          <button id="editorLoadButton" class="secondary-button" type="button" disabled>Reload file</button>
-        </div>
-        <p id="editorDescription" class="experimental-note"></p>
-        <textarea id="editorContent" class="setup-input code-editor-content" spellcheck="false" aria-label="Source code" disabled></textarea>
-        <div class="code-editor-toolbar">
-          <button id="editorSaveButton" class="apply-button" type="button" disabled>Save and restart backend</button>
-          <select id="editorRevisionSelect" class="setup-select" aria-label="Backup version" disabled><option>Choose a backup</option></select>
-          <button id="editorRestoreButton" class="secondary-button" type="button" disabled>Restore backup</button>
+        <div class="editor-workspace">
+          <aside class="repository-explorer" aria-label="Repository explorer">
+            <div class="repository-explorer-header"><span>Explorer</span><button id="editorTreeReloadButton" class="secondary-button" type="button" disabled aria-label="Reload repository tree">↻</button></div>
+            <div id="editorTree" class="editor-tree" tabindex="0" aria-live="polite">Unlock the editor to browse source files.</div>
+          </aside>
+          <div class="editor-document">
+            <div class="code-editor-toolbar">
+              <strong id="editorCurrentFile">Choose a source file</strong>
+              <button id="editorLoadButton" class="secondary-button" type="button" disabled>Reload file</button>
+            </div>
+            <p id="editorDescription" class="experimental-note"></p>
+            <textarea id="editorContent" class="setup-input code-editor-content" spellcheck="false" aria-label="Source code" disabled></textarea>
+            <div class="code-editor-toolbar">
+              <button id="editorSaveButton" class="apply-button" type="button" disabled>Save and restart backend</button>
+              <select id="editorRevisionSelect" class="setup-select" aria-label="Backup version" disabled><option>Choose a backup</option></select>
+              <button id="editorRestoreButton" class="secondary-button" type="button" disabled>Restore backup</button>
+            </div>
+          </div>
         </div>
         <p id="editorMessage" class="generator-message" aria-live="polite"></p>
       </div>
@@ -599,7 +607,9 @@ const workbench = document.querySelector<HTMLElement>("#workbench")!;
 const simulationPane = document.querySelector<HTMLElement>("#simulationPane")!;
 const closeCodeEditorButton = document.querySelector<HTMLButtonElement>("#closeCodeEditorButton")!;
 const editorPassword = document.querySelector<HTMLInputElement>("#editorPassword")!;
-const editorFileSelect = document.querySelector<HTMLSelectElement>("#editorFileSelect")!;
+const editorTree = document.querySelector<HTMLElement>("#editorTree")!;
+const editorTreeReloadButton = document.querySelector<HTMLButtonElement>("#editorTreeReloadButton")!;
+const editorCurrentFile = document.querySelector<HTMLElement>("#editorCurrentFile")!;
 const editorConnectButton = document.querySelector<HTMLButtonElement>("#editorConnectButton")!;
 const editorLoadButton = document.querySelector<HTMLButtonElement>("#editorLoadButton")!;
 const editorContent = document.querySelector<HTMLTextAreaElement>("#editorContent")!;
@@ -758,8 +768,9 @@ objectCodeInput.addEventListener("input", () => localStorage.setItem("mujocoweb-
 loadObjectCodeButton.addEventListener("click", loadCurrentObjectCode);
 applyObjectCodeButton.addEventListener("click", applyObjectCode);
 
-type EditorFile = {id: string; name: string; description: string};
-type EditorDocument = EditorFile & {content: string; sha256: string; revisions: string[]};
+type EditorTreeNode = {kind: "directory"; name: string; children: EditorTreeNode[]} | {kind: "file"; name: string; id: string};
+type EditorDocument = {id: string; name: string; description: string; content: string; sha256: string; revisions: string[]};
+let editorFileId = "";
 
 async function editorRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
     await refreshPublishedBackendUrl();
@@ -794,17 +805,8 @@ async function connectEditor(): Promise<void> {
     editorConnectButton.disabled = true;
     editorStatus("Connecting to the editor…");
     try {
-        const result = await editorRequest<{files: EditorFile[]}>("/files");
-        editorFileSelect.replaceChildren(...result.files.map((file) => {
-            const option = document.createElement("option");
-            option.value = file.id;
-            option.textContent = `${file.name} — ${file.description}`;
-            return option;
-        }));
-        editorFileSelect.disabled = false;
-        editorLoadButton.disabled = false;
-        editorStatus("Connected. Select a file to edit.");
-        await loadEditorFile();
+        await loadEditorTree();
+        editorStatus("Connected. Choose a source file in the explorer.");
         editorLogsMessage.textContent = "";
         void refreshEditorLogs();
     } catch (error) {
@@ -817,15 +819,58 @@ async function connectEditor(): Promise<void> {
     }
 }
 
+function renderEditorTree(nodes: EditorTreeNode[]): DocumentFragment {
+    const fragment = document.createDocumentFragment();
+    for (const node of nodes) {
+        if (node.kind === "directory") {
+            const details = document.createElement("details");
+            details.className = "editor-tree-directory";
+            details.open = node.name === "dapg" || node.name === "live-robohive";
+            const summary = document.createElement("summary");
+            summary.textContent = node.name;
+            details.append(summary, renderEditorTree(node.children));
+            fragment.append(details);
+        } else {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "editor-tree-file";
+            button.textContent = node.name;
+            button.dataset.fileId = node.id;
+            button.addEventListener("click", () => {
+                editorFileId = node.id;
+                void loadEditorFile();
+            });
+            fragment.append(button);
+        }
+    }
+    return fragment;
+}
+
+async function loadEditorTree(): Promise<void> {
+    editorTreeReloadButton.disabled = true;
+    editorTree.textContent = "Loading repository…";
+    try {
+        const result = await editorRequest<{roots: EditorTreeNode[]}>("/tree");
+        editorTree.replaceChildren(renderEditorTree(result.roots));
+        editorTreeReloadButton.disabled = false;
+    } catch (error) {
+        editorTree.textContent = error instanceof Error ? error.message : "Could not load repository.";
+    }
+}
+
 async function loadEditorFile(): Promise<void> {
-    const fileId = editorFileSelect.value;
+    const fileId = editorFileId;
     if (!fileId || !editorToken) return;
     editorStatus("Loading source file…");
     try {
         const file = await editorRequest<EditorDocument>(`/files/${encodeURIComponent(fileId)}`);
         editorContent.value = file.content;
         editorRevision = file.sha256;
+        editorCurrentFile.textContent = file.description;
         editorDescription.textContent = `${file.name} · ${file.description}`;
+        document.querySelectorAll(".editor-tree-file").forEach((button) => {
+            button.classList.toggle("selected", (button as HTMLElement).dataset.fileId === fileId);
+        });
         editorRevisionSelect.replaceChildren(...file.revisions.map((revision) => {
             const option = document.createElement("option");
             option.value = revision;
@@ -848,7 +893,7 @@ async function saveEditorFile(): Promise<void> {
     editorSaveButton.disabled = true;
     editorStatus("Validating and saving…");
     try {
-        await editorRequest<{sha256: string; restarting: boolean}>(`/files/${encodeURIComponent(editorFileSelect.value)}`, {
+        await editorRequest<{sha256: string; restarting: boolean}>(`/files/${encodeURIComponent(editorFileId)}`, {
             method: "PUT",
             body: JSON.stringify({content: editorContent.value, expected_sha256: editorRevision}),
         });
@@ -868,7 +913,7 @@ async function restoreEditorFile(): Promise<void> {
     editorRestoreButton.disabled = true;
     editorStatus("Restoring backup…");
     try {
-        await editorRequest(`/files/${encodeURIComponent(editorFileSelect.value)}/restore`, {
+        await editorRequest(`/files/${encodeURIComponent(editorFileId)}/restore`, {
             method: "POST",
             body: JSON.stringify({revision, expected_sha256: editorRevision}),
         });
@@ -925,7 +970,7 @@ function setEditorOpen(open: boolean): void {
     codeEditorDialog.setAttribute("aria-hidden", String(!open));
     if (open) {
         if (!editorToken) editorPassword.focus();
-        else editorFileSelect.focus();
+        else editorTree.focus();
     } else {
         codeEditorButton.focus();
     }
@@ -957,8 +1002,8 @@ editorConnectButton.addEventListener("click", connectEditor);
 editorPassword.addEventListener("keydown", (event) => {
     if (event.key === "Enter") void connectEditor();
 });
-editorFileSelect.addEventListener("change", loadEditorFile);
 editorLoadButton.addEventListener("click", loadEditorFile);
+editorTreeReloadButton.addEventListener("click", () => void loadEditorTree());
 editorSaveButton.addEventListener("click", saveEditorFile);
 editorRestoreButton.addEventListener("click", restoreEditorFile);
 editorLogsRefreshButton.addEventListener("click", () => void refreshEditorLogs());
