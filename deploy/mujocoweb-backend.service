@@ -1,0 +1,14 @@
+[Unit]
+Description=MuJoCo Web GPU backend (user service)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/paul/PycharmProjects/dapg
+ExecStart=/home/paul/PycharmProjects/dapg/run-local.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

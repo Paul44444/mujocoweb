@@ -1,0 +1,14 @@
+[Unit]
+Description=MuJoCo Web temporary Cloudflare tunnel
+After=network-online.target mujocoweb-backend.service
+Wants=network-online.target mujocoweb-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/paul/WebstormProjects/mujocoweb
+ExecStart=/home/paul/WebstormProjects/mujocoweb/scripts/run-quick-tunnel.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
