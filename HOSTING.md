@@ -1,7 +1,7 @@
 # Backend hosting switch
 
-The frontend currently uses the Ubuntu computer's Cloudflare tunnel by default.
-Render remains available as a fallback:
+The frontend uses Render by default while the Ubuntu computer has no stable
+public tunnel. The former `trycloudflare.com` quick tunnel has expired.
 
 ```text
 https://mujocoweb-backend.onrender.com
@@ -15,7 +15,9 @@ VITE_BACKEND_URL=https://simulation.example.com
 ```
 
 The built-in default is declared as `DEFAULT_BACKEND_URL` in `src/main.ts`.
-`RENDER_BACKEND_URL` is kept separately and is not removed.
+Once a permanent tunnel hostname is available, it can become the default.
+If a configured GPU backend cannot establish a WebSocket, the frontend retries
+once against Render automatically.
 
 For a temporary browser-only test, open the deployed frontend once with:
 
@@ -29,7 +31,7 @@ That browser remembers the override. Return it to Render with:
 https://mujocoweb.vercel.app/?backend=render
 ```
 
-Return to the built-in local-GPU default with:
+Return to the built-in default with:
 
 ```text
 https://mujocoweb.vercel.app/?backend=default

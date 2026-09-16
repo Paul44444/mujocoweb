@@ -1,7 +1,9 @@
 import "./style.css";
 
 const RENDER_BACKEND_URL = "https://mujocoweb-backend.onrender.com";
-const DEFAULT_BACKEND_URL = "https://thumbnail-delivers-solving-followed.trycloudflare.com";
+// A trycloudflare.com quick tunnel is temporary and must never be the default.
+const DEFAULT_BACKEND_URL = RENDER_BACKEND_URL;
+const EXPIRED_TUNNEL_URL = "https://thumbnail-delivers-solving-followed.trycloudflare.com";
 
 function normalizeBackendUrl(value: string): string {
     const url = new URL(value);
@@ -25,7 +27,11 @@ function resolveBackendUrl(): string {
         }
     }
     const configured = import.meta.env.VITE_BACKEND_URL?.trim();
-    const stored = localStorage.getItem("mujocoweb-backend-url");
+    let stored = localStorage.getItem("mujocoweb-backend-url");
+    if (stored === EXPIRED_TUNNEL_URL) {
+        localStorage.removeItem("mujocoweb-backend-url");
+        stored = null;
+    }
     try {
         return normalizeBackendUrl(stored || configured || DEFAULT_BACKEND_URL);
     } catch {
@@ -33,7 +39,7 @@ function resolveBackendUrl(): string {
     }
 }
 
-const backendUrl = resolveBackendUrl();
+let backendUrl = resolveBackendUrl();
 
 function backendHttpUrl(path: string): string {
     return `${backendUrl}${path}`;
@@ -867,7 +873,7 @@ function zoomCamera(event: WheelEvent): void {
     sendSimulationCommand({type: "camera_zoom", delta: Math.sign(event.deltaY)});
 }
 
-function connectToSimulation(): void {
+function connectToSimulation(fallbackAttempt = false): void {
     if (
         socket &&
         (socket.readyState === WebSocket.OPEN ||
@@ -887,10 +893,12 @@ function connectToSimulation(): void {
 
     console.log("Connecting to WebSocket:", websocketUrl);
     socket = new WebSocket(websocketUrl.toString());
+    let connectionOpened = false;
 
     socket.binaryType = "blob";
 
     socket.onopen = () => {
+        connectionOpened = true;
         console.log("WebSocket opened:", websocketUrl);
         setStatus("Connected", "connected");
         startButton.disabled = false;
@@ -900,7 +908,9 @@ function connectToSimulation(): void {
 
     socket.onerror = (event) => {
         console.error("WebSocket error:", event);
-        setStatus("WebSocket connection failed", "error");
+        if (backendUrl === RENDER_BACKEND_URL || fallbackAttempt) {
+            setStatus("WebSocket connection failed", "error");
+        }
     };
 
     socket.onclose = (event) => {
@@ -915,6 +925,13 @@ function connectToSimulation(): void {
         updatePlaybackButton();
         resetCameraButton.disabled = true;
         startButton.disabled = false;
+
+        if (!connectionOpened && !fallbackAttempt && backendUrl !== RENDER_BACKEND_URL) {
+            backendUrl = RENDER_BACKEND_URL;
+            setStatus("GPU backend unavailable — connecting to Render…", "connecting");
+            connectToSimulation(true);
+            return;
+        }
 
         if (statusText.textContent !== "Simulation finished") {
             setStatus(
