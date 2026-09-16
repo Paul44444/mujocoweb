@@ -169,6 +169,10 @@ h1 {
     grid-template-columns: minmax(170px, 210px) minmax(150px, 18%) minmax(0, 1fr);
 }
 
+.workbench.logs-open {
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 18%) 48px;
+}
+
 .workbench-logs,
 .code-editor-pane {
     position: sticky;
@@ -202,6 +206,11 @@ h1 {
 
 .workbench-logs-header .secondary-button {
     padding: 6px 10px;
+}
+
+.workbench-logs-actions {
+    display: flex;
+    gap: 6px;
 }
 
 .workbench-log-auth {
@@ -275,6 +284,59 @@ h1 {
 }
 
 .workbench.editor-open .simulation-pane::after {
+    content: "Click to expand simulation";
+    position: absolute;
+    right: 8px;
+    bottom: 10px;
+    left: 8px;
+    padding: 7px;
+    border-radius: 7px;
+    background: rgba(9, 9, 11, 0.86);
+    color: #f4f4f5;
+    font-size: 0.7rem;
+    text-align: center;
+    pointer-events: none;
+}
+
+.workbench.logs-open .simulation-pane {
+    cursor: pointer;
+    overflow: hidden;
+    border-radius: 22px;
+}
+
+.workbench.logs-open .simulation-pane > * {
+    pointer-events: none;
+}
+
+.workbench.logs-open .simulation-pane .simulation-header .controls,
+.workbench.logs-open .simulation-pane .metadata,
+.workbench.logs-open .simulation-pane .active-configuration,
+.workbench.logs-open .simulation-pane .info-banner {
+    display: none;
+}
+
+.workbench.logs-open .simulation-pane .simulation-header {
+    padding: 14px;
+}
+
+.workbench.logs-open .simulation-pane .simulation-header h2 {
+    font-size: 0.9rem;
+}
+
+.workbench.logs-open .simulation-pane .simulation-header p {
+    font-size: 0.7rem;
+}
+
+.workbench.logs-open .simulation-window {
+    min-height: 520px;
+}
+
+.workbench.logs-open #simulationImage {
+    max-height: none;
+    object-fit: cover;
+}
+
+.workbench.logs-open .simulation-pane::after {
     content: "Click to expand simulation";
     position: absolute;
     right: 8px;
@@ -1458,6 +1520,11 @@ body.panel-open {
         grid-template-columns: 54px minmax(0, 1fr);
     }
 
+    .workbench.logs-open {
+        grid-template-columns: minmax(0, 1fr) 42px;
+        grid-template-areas: "logs logs" "sim code";
+    }
+
     .workbench-logs {
         grid-area: logs;
         position: static;
@@ -1484,6 +1551,10 @@ body.panel-open {
 
     .workbench-log-auth .secondary-button {
         width: auto;
+    }
+
+    #editorLogsExpandButton {
+        display: none;
     }
 
     .simulation-pane {

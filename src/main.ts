@@ -100,7 +100,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <aside id="editorLogsPanel" class="workbench-logs" aria-label="Backend logs">
           <div class="workbench-logs-header">
             <div><span class="panel-eyebrow">Live output</span><h2>Backend log</h2></div>
-            <button id="editorLogsRefreshButton" class="secondary-button" type="button" aria-label="Refresh backend logs">↻</button>
+            <div class="workbench-logs-actions">
+              <button id="editorLogsExpandButton" class="secondary-button" type="button" aria-expanded="false">Expand</button>
+              <button id="editorLogsRefreshButton" class="secondary-button" type="button" aria-label="Refresh backend logs">↻</button>
+            </div>
           </div>
           <div class="workbench-log-auth">
             <label class="field-label" for="editorPassword">Editor password</label>
@@ -606,6 +609,7 @@ const editorRestoreButton = document.querySelector<HTMLButtonElement>("#editorRe
 const editorMessage = document.querySelector<HTMLParagraphElement>("#editorMessage")!;
 const editorDescription = document.querySelector<HTMLParagraphElement>("#editorDescription")!;
 const editorLogsRefreshButton = document.querySelector<HTMLButtonElement>("#editorLogsRefreshButton")!;
+const editorLogsExpandButton = document.querySelector<HTMLButtonElement>("#editorLogsExpandButton")!;
 const editorLogsOutput = document.querySelector<HTMLElement>("#editorLogsOutput")!;
 const editorLogsMessage = document.querySelector<HTMLParagraphElement>("#editorLogsMessage")!;
 
@@ -900,6 +904,7 @@ async function refreshEditorLogs(): Promise<void> {
 }
 
 function setEditorOpen(open: boolean): void {
+    if (open) setLogsOpen(false);
     workbench.classList.toggle("editor-open", open);
     codeEditorButton.setAttribute("aria-expanded", String(open));
     codeEditorDialog.inert = !open;
@@ -912,16 +917,27 @@ function setEditorOpen(open: boolean): void {
     }
 }
 
+function setLogsOpen(open: boolean): void {
+    if (open) setEditorOpen(false);
+    workbench.classList.toggle("logs-open", open);
+    editorLogsExpandButton.textContent = open ? "← Simulation" : "Expand";
+    editorLogsExpandButton.setAttribute("aria-expanded", String(open));
+    if (open) {
+        editorLogsOutput.focus();
+    }
+}
+
 codeEditorDialog.inert = true;
 codeEditorDialog.setAttribute("aria-hidden", "true");
 codeEditorButton.addEventListener("click", () => setEditorOpen(true));
 codeEditorRailButton.addEventListener("click", () => setEditorOpen(true));
 closeCodeEditorButton.addEventListener("click", () => setEditorOpen(false));
 simulationPane.addEventListener("click", (event) => {
-    if (!workbench.classList.contains("editor-open")) return;
+    if (!workbench.classList.contains("editor-open") && !workbench.classList.contains("logs-open")) return;
     event.preventDefault();
     event.stopPropagation();
-    setEditorOpen(false);
+    if (workbench.classList.contains("editor-open")) setEditorOpen(false);
+    else setLogsOpen(false);
 }, true);
 editorConnectButton.addEventListener("click", connectEditor);
 editorPassword.addEventListener("keydown", (event) => {
@@ -932,6 +948,7 @@ editorLoadButton.addEventListener("click", loadEditorFile);
 editorSaveButton.addEventListener("click", saveEditorFile);
 editorRestoreButton.addEventListener("click", restoreEditorFile);
 editorLogsRefreshButton.addEventListener("click", refreshEditorLogs);
+editorLogsExpandButton.addEventListener("click", () => setLogsOpen(!workbench.classList.contains("logs-open")));
 window.setInterval(() => {
     if (editorToken && document.querySelector("#demo-section")?.classList.contains("active")) void refreshEditorLogs();
 }, 3000);
@@ -1471,6 +1488,7 @@ document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     if (setupPanel.classList.contains("open")) closeSetupPanel();
     else if (workbench.classList.contains("editor-open")) setEditorOpen(false);
+    else if (workbench.classList.contains("logs-open")) setLogsOpen(false);
 });
 
 window.addEventListener("beforeunload", () => {
