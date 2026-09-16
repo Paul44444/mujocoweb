@@ -858,6 +858,31 @@ body.panel-open {
     margin-top: 16px;
 }
 
+.object-code-editor {
+    margin-bottom: 24px;
+}
+
+.object-code-input {
+    width: 100%;
+    min-height: 280px;
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    tab-size: 2;
+}
+
+.object-code-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.object-code-actions button {
+    width: auto;
+}
+
 .validation-message {
     min-height: 18px;
     margin: 8px 0 0 !important;

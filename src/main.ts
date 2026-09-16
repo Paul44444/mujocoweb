@@ -421,6 +421,17 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <p class="experimental-note">Experimental: the existing policy was trained on its original object, so unusual shapes may be difficult for the hand.</p>
         </section>
 
+        <details class="advanced-settings object-code-editor">
+          <summary>Edit simulation object as JSON</summary>
+          <p>Change the object used by the Relocate task. This is simulation data, not executable Python. Drafts stay in this browser; the backend validates the object again before running it.</p>
+          <textarea id="objectCodeInput" class="setup-input object-code-input" rows="16" spellcheck="false" aria-label="Object JSON code"></textarea>
+          <div class="object-code-actions">
+            <button id="loadObjectCodeButton" class="secondary-button" type="button">Load current object</button>
+            <button id="applyObjectCodeButton" class="generate-button" type="button">Validate and use object</button>
+          </div>
+          <p id="objectCodeMessage" class="generator-message" aria-live="polite"></p>
+        </details>
+
         <section class="setup-section">
           <div class="setup-section-heading">
             <span class="section-number">01</span>
@@ -529,6 +540,10 @@ const generatedObjectCard = document.querySelector<HTMLDivElement>("#generatedOb
 const generatedObjectName = document.querySelector<HTMLElement>("#generatedObjectName")!;
 const generatedObjectSummary = document.querySelector<HTMLParagraphElement>("#generatedObjectSummary")!;
 const generatedObjectParts = document.querySelector<HTMLElement>("#generatedObjectParts")!;
+const objectCodeInput = document.querySelector<HTMLTextAreaElement>("#objectCodeInput")!;
+const objectCodeMessage = document.querySelector<HTMLParagraphElement>("#objectCodeMessage")!;
+const loadObjectCodeButton = document.querySelector<HTMLButtonElement>("#loadObjectCodeButton")!;
+const applyObjectCodeButton = document.querySelector<HTMLButtonElement>("#applyObjectCodeButton")!;
 
 let socket: WebSocket | null = null;
 let currentImageUrl: string | null = null;
@@ -598,6 +613,72 @@ type GeneratedObject = {
 };
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
+
+const starterObject: GeneratedObject = {
+    name: "Custom object",
+    summary: "An editable object for the relocation task",
+    parts: [{
+        shape: "box",
+        size: [0.03, 0.03, 0.03],
+        position: [0, 0, 0],
+        euler: [0, 0, 0],
+        rgba: [0.9, 0.2, 0.2, 1],
+        mass: 0.1,
+    }],
+};
+
+function loadCurrentObjectCode(): void {
+    objectCodeInput.value = JSON.stringify(generatedObject ?? starterObject, null, 2);
+    localStorage.setItem("mujocoweb-object-code-draft", objectCodeInput.value);
+    objectCodeMessage.textContent = "Current object loaded. Edit it, then validate and use it.";
+}
+
+function validateObjectCode(value: unknown): GeneratedObject {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected a JSON object.");
+    const object = value as Record<string, unknown>;
+    if (typeof object.name !== "string" || !object.name.trim() || object.name.length > 48) throw new Error("Name must be 1–48 characters.");
+    if (typeof object.summary !== "string" || object.summary.length > 180) throw new Error("Summary must be at most 180 characters.");
+    if (!Array.isArray(object.parts) || object.parts.length < 1 || object.parts.length > 6) throw new Error("Use 1–6 parts.");
+    const shapes = new Set(["sphere", "box", "capsule", "cylinder", "ellipsoid"]);
+    for (const [index, rawPart] of object.parts.entries()) {
+        if (!rawPart || typeof rawPart !== "object" || Array.isArray(rawPart)) throw new Error(`Part ${index + 1} must be an object.`);
+        const part = rawPart as Record<string, unknown>;
+        if (!shapes.has(String(part.shape))) throw new Error(`Part ${index + 1}: unsupported shape.`);
+        for (const [field, length, minimum, maximum] of [
+            ["size", 3, 0.005, 0.09],
+            ["position", 3, -0.12, 0.12],
+            ["euler", 3, -3.142, 3.142],
+            ["rgba", 4, 0, 1],
+        ] as const) {
+            const values = part[field];
+            if (!Array.isArray(values) || values.length !== length || values.some((v) => typeof v !== "number" || !Number.isFinite(v) || v < minimum || v > maximum)) {
+                throw new Error(`Part ${index + 1}: ${field} must have ${length} numbers between ${minimum} and ${maximum}.`);
+            }
+        }
+        if (typeof part.mass !== "number" || !Number.isFinite(part.mass) || part.mass < 0.005 || part.mass > 1.5) {
+            throw new Error(`Part ${index + 1}: mass must be between 0.005 and 1.5 kg.`);
+        }
+    }
+    return {name: object.name, summary: object.summary, parts: object.parts as ObjectPart[], generator: "manual-json"};
+}
+
+function applyObjectCode(): void {
+    try {
+        const parsed = JSON.parse(objectCodeInput.value) as unknown;
+        if (objectCodeInput.value.length > 7500) throw new Error("Object code is too large (7,500-character limit).");
+        generatedObject = validateObjectCode(parsed);
+        populateTask("relocate");
+        showGeneratedObject();
+        objectCodeMessage.textContent = "Valid object. Apply the configuration, then start the simulation.";
+    } catch (error) {
+        objectCodeMessage.textContent = error instanceof Error ? error.message : "Invalid object code.";
+    }
+}
+
+objectCodeInput.value = localStorage.getItem("mujocoweb-object-code-draft") ?? JSON.stringify(starterObject, null, 2);
+objectCodeInput.addEventListener("input", () => localStorage.setItem("mujocoweb-object-code-draft", objectCodeInput.value));
+loadObjectCodeButton.addEventListener("click", loadCurrentObjectCode);
+applyObjectCodeButton.addEventListener("click", applyObjectCode);
 
 function showGeneratedObject(): void {
     if (!generatedObject) {
