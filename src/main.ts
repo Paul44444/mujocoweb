@@ -913,7 +913,7 @@ async function restoreEditorFile(): Promise<void> {
     editorRestoreButton.disabled = true;
     editorStatus("Restoring backup…");
     try {
-        await editorRequest(`/files/${encodeURIComponent(editorFileId)}/restore`, {
+        await editorRequest(`/files/restore/${encodeURIComponent(editorFileId)}`, {
             method: "POST",
             body: JSON.stringify({revision, expected_sha256: editorRevision}),
         });
