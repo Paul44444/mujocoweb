@@ -41,6 +41,22 @@ function resolveBackendUrl(): string {
 
 let backendUrl = resolveBackendUrl();
 
+async function refreshPublishedBackendUrl(): Promise<void> {
+    // Explicit per-browser overrides always take precedence over the public default.
+    if (localStorage.getItem("mujocoweb-backend-url")) return;
+    try {
+        const response = await fetch(`/backend.json?t=${Date.now()}`, {cache: "no-store"});
+        if (!response.ok) return;
+        const config = await response.json() as {url?: unknown};
+        if (typeof config.url !== "string") return;
+        const url = normalizeBackendUrl(config.url);
+        if (new URL(url).protocol !== "https:") return;
+        backendUrl = url;
+    } catch (error) {
+        console.warn("Could not load published backend URL; using fallback:", error);
+    }
+}
+
 function backendHttpUrl(path: string): string {
     return `${backendUrl}${path}`;
 }
@@ -605,6 +621,7 @@ async function generateObject(): Promise<void> {
     generateObjectButton.textContent = "Designing…";
     generatorMessage.textContent = "The AI is translating your idea into MuJoCo geometry.";
     try {
+        await refreshPublishedBackendUrl();
         const response = await fetch(backendHttpUrl("/api/objects/generate"), {
             method: "POST",
             headers: {"Content-Type": "application/json"},
@@ -797,10 +814,12 @@ function updatePlaybackButton(): void {
     startButton.setAttribute("aria-label", label.textContent);
 }
 
-function handlePlaybackButton(): void {
+async function handlePlaybackButton(): Promise<void> {
     if (socket?.readyState === WebSocket.OPEN) {
         togglePause();
     } else {
+        startButton.disabled = true;
+        await refreshPublishedBackendUrl();
         connectToSimulation();
     }
 }
