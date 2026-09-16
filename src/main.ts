@@ -515,6 +515,15 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <button id="editorRestoreButton" class="secondary-button" type="button" disabled>Restore backup</button>
         </div>
         <p id="editorMessage" class="generator-message" aria-live="polite"></p>
+        <details id="editorLogsPanel" class="editor-logs-panel">
+          <summary>Backend logs · print() output</summary>
+          <div class="editor-logs-toolbar">
+            <span>Last 120 lines · updates every 3 seconds while open</span>
+            <button id="editorLogsRefreshButton" class="secondary-button" type="button">Refresh</button>
+          </div>
+          <pre id="editorLogsOutput" class="editor-logs-output" aria-label="Backend logs">Connect to the editor to view logs.</pre>
+          <p id="editorLogsMessage" class="generator-message" aria-live="polite"></p>
+        </details>
       </div>
     </section>
   </div>
@@ -584,6 +593,10 @@ const editorRevisionSelect = document.querySelector<HTMLSelectElement>("#editorR
 const editorRestoreButton = document.querySelector<HTMLButtonElement>("#editorRestoreButton")!;
 const editorMessage = document.querySelector<HTMLParagraphElement>("#editorMessage")!;
 const editorDescription = document.querySelector<HTMLParagraphElement>("#editorDescription")!;
+const editorLogsPanel = document.querySelector<HTMLDetailsElement>("#editorLogsPanel")!;
+const editorLogsRefreshButton = document.querySelector<HTMLButtonElement>("#editorLogsRefreshButton")!;
+const editorLogsOutput = document.querySelector<HTMLElement>("#editorLogsOutput")!;
+const editorLogsMessage = document.querySelector<HTMLParagraphElement>("#editorLogsMessage")!;
 const objectCodeInput = document.querySelector<HTMLTextAreaElement>("#objectCodeInput")!;
 const objectCodeMessage = document.querySelector<HTMLParagraphElement>("#objectCodeMessage")!;
 const loadObjectCodeButton = document.querySelector<HTMLButtonElement>("#loadObjectCodeButton")!;
@@ -592,6 +605,7 @@ const applyObjectCodeButton = document.querySelector<HTMLButtonElement>("#applyO
 let socket: WebSocket | null = null;
 let editorToken = "";
 let editorRevision = "";
+let editorLogsLoading = false;
 let currentImageUrl: string | null = null;
 let lastFocusedElement: HTMLElement | null = null;
 let isPaused = false;
@@ -773,6 +787,7 @@ async function connectEditor(): Promise<void> {
         editorLoadButton.disabled = false;
         editorStatus("Connected. Select a file to edit.");
         await loadEditorFile();
+        if (editorLogsPanel.open) void refreshEditorLogs();
     } catch (error) {
         editorToken = "";
         editorStatus(error instanceof Error ? error.message : "Could not connect to editor.");
@@ -845,6 +860,28 @@ async function restoreEditorFile(): Promise<void> {
     }
 }
 
+async function refreshEditorLogs(): Promise<void> {
+    if (editorLogsLoading) return;
+    if (!editorToken) {
+        editorLogsMessage.textContent = "Connect with the editor password to view logs.";
+        return;
+    }
+    editorLogsLoading = true;
+    editorLogsRefreshButton.disabled = true;
+    try {
+        const atBottom = editorLogsOutput.scrollTop + editorLogsOutput.clientHeight >= editorLogsOutput.scrollHeight - 30;
+        const result = await editorRequest<{logs: string}>("/logs");
+        editorLogsOutput.textContent = result.logs || "No backend logs yet.";
+        if (atBottom) editorLogsOutput.scrollTop = editorLogsOutput.scrollHeight;
+        editorLogsMessage.textContent = "";
+    } catch (error) {
+        editorLogsMessage.textContent = error instanceof Error ? error.message : "Could not load backend logs.";
+    } finally {
+        editorLogsLoading = false;
+        editorLogsRefreshButton.disabled = false;
+    }
+}
+
 codeEditorButton.addEventListener("click", () => {
     codeEditorOverlay.hidden = false;
     editorPassword.focus();
@@ -858,6 +895,13 @@ editorFileSelect.addEventListener("change", loadEditorFile);
 editorLoadButton.addEventListener("click", loadEditorFile);
 editorSaveButton.addEventListener("click", saveEditorFile);
 editorRestoreButton.addEventListener("click", restoreEditorFile);
+editorLogsRefreshButton.addEventListener("click", refreshEditorLogs);
+editorLogsPanel.addEventListener("toggle", () => {
+    if (editorLogsPanel.open && !codeEditorOverlay.hidden) void refreshEditorLogs();
+});
+window.setInterval(() => {
+    if (!codeEditorOverlay.hidden && editorLogsPanel.open && editorToken) void refreshEditorLogs();
+}, 3000);
 
 function showGeneratedObject(): void {
     if (!generatedObject) {

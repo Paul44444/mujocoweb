@@ -9,6 +9,7 @@ WorkingDirectory=/home/paul/PycharmProjects/dapg
 ExecStart=/home/paul/PycharmProjects/dapg/run-local.sh
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=20
 
 [Install]
 WantedBy=default.target
