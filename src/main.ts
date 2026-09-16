@@ -616,6 +616,7 @@ const loadObjectCodeButton = document.querySelector<HTMLButtonElement>("#loadObj
 const applyObjectCodeButton = document.querySelector<HTMLButtonElement>("#applyObjectCodeButton")!;
 
 let socket: WebSocket | null = null;
+let configurationVersion = 0;
 let editorToken = "";
 let editorRevision = "";
 let editorLogsLoading = false;
@@ -1056,6 +1057,35 @@ function applyConfiguration(): void {
     }));
 }
 
+function resetSimulationForConfiguration(): void {
+    configurationVersion += 1;
+    const previousSocket = socket;
+    socket = null;
+    previousSocket?.close(1000, "Configuration changed");
+    isPaused = false;
+    activePointers.clear();
+    cameraDrag = null;
+    pinchDistance = null;
+    cameraGestureMoved = false;
+    suppressSimulationClick = false;
+    simulationImage.onload = null;
+    simulationImage.removeAttribute("src");
+    simulationImage.classList.remove("visible");
+    placeholder.classList.remove("hidden");
+    if (currentImageUrl) {
+        URL.revokeObjectURL(currentImageUrl);
+        currentImageUrl = null;
+    }
+    episodeValue.textContent = "—";
+    stepValue.textContent = "—";
+    rewardValue.textContent = "—";
+    timeValue.textContent = "—";
+    resetCameraButton.disabled = true;
+    startButton.disabled = false;
+    updatePlaybackButton();
+    setStatus("Ready to start with the new configuration", "idle");
+}
+
 function resetConfiguration(): void {
     generatedObject = null;
     objectPrompt.value = "";
@@ -1154,8 +1184,10 @@ async function handlePlaybackButton(): Promise<void> {
     if (socket?.readyState === WebSocket.OPEN) {
         togglePause();
     } else {
+        const version = configurationVersion;
         startButton.disabled = true;
         await refreshPublishedBackendUrl();
+        if (version !== configurationVersion) return;
         connectToSimulation();
     }
 }
@@ -1247,12 +1279,14 @@ function connectToSimulation(fallbackAttempt = false): void {
     }
 
     console.log("Connecting to WebSocket:", websocketUrl);
-    socket = new WebSocket(websocketUrl.toString());
+    const connection = new WebSocket(websocketUrl.toString());
+    socket = connection;
     let connectionOpened = false;
 
-    socket.binaryType = "blob";
+    connection.binaryType = "blob";
 
-    socket.onopen = () => {
+    connection.onopen = () => {
+        if (socket !== connection) return;
         connectionOpened = true;
         console.log("WebSocket opened:", websocketUrl);
         setStatus("Connected", "connected");
@@ -1261,14 +1295,16 @@ function connectToSimulation(fallbackAttempt = false): void {
         resetCameraButton.disabled = false;
     };
 
-    socket.onerror = (event) => {
+    connection.onerror = (event) => {
+        if (socket !== connection) return;
         console.error("WebSocket error:", event);
         if (backendUrl === RENDER_BACKEND_URL || fallbackAttempt) {
             setStatus("WebSocket connection failed", "error");
         }
     };
 
-    socket.onclose = (event) => {
+    connection.onclose = (event) => {
+        if (socket !== connection) return;
         console.log("WebSocket closed:", {
             code: event.code,
             reason: event.reason,
@@ -1296,7 +1332,8 @@ function connectToSimulation(fallbackAttempt = false): void {
         }
     };
 
-    socket.onmessage = (event: MessageEvent) => {
+    connection.onmessage = (event: MessageEvent) => {
+        if (socket !== connection) return;
         if (typeof event.data === "string") {
             handleTextMessage(event.data);
             return;
@@ -1425,6 +1462,7 @@ policyPreset.addEventListener("change", () => {
 setupForm.addEventListener("submit", (event) => {
     event.preventDefault();
     if (!validateConfiguration()) return;
+    resetSimulationForConfiguration();
     applyConfiguration();
     closeSetupPanel();
 });
