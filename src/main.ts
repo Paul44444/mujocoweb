@@ -1,4 +1,9 @@
 import "./style.css";
+import {defaultKeymap, history, historyKeymap} from "@codemirror/commands";
+import {python} from "@codemirror/lang-python";
+import {defaultHighlightStyle, syntaxHighlighting} from "@codemirror/language";
+import {EditorState} from "@codemirror/state";
+import {EditorView, keymap} from "@codemirror/view";
 
 const RENDER_BACKEND_URL = "https://mujocoweb-backend.onrender.com";
 // A trycloudflare.com quick tunnel is temporary and must never be the default.
@@ -531,10 +536,12 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <div class="editor-document">
             <div class="code-editor-toolbar">
               <strong id="editorCurrentFile">Choose a source file</strong>
+              <button id="editorBackButton" class="secondary-button" type="button" disabled>← Back</button>
+              <button id="editorForwardButton" class="secondary-button" type="button" disabled>Forward →</button>
               <button id="editorLoadButton" class="secondary-button" type="button" disabled>Reload file</button>
             </div>
             <p id="editorDescription" class="experimental-note"></p>
-            <textarea id="editorContent" class="setup-input code-editor-content" spellcheck="false" aria-label="Source code" disabled></textarea>
+            <div id="editorContent" class="code-editor-content" aria-label="Source code"></div>
             <div class="code-editor-toolbar">
               <button id="editorSaveButton" class="apply-button" type="button" disabled>Save and restart backend</button>
               <select id="editorRevisionSelect" class="setup-select" aria-label="Backup version" disabled><option>Choose a backup</option></select>
@@ -611,8 +618,10 @@ const editorTree = document.querySelector<HTMLElement>("#editorTree")!;
 const editorTreeReloadButton = document.querySelector<HTMLButtonElement>("#editorTreeReloadButton")!;
 const editorCurrentFile = document.querySelector<HTMLElement>("#editorCurrentFile")!;
 const editorConnectButton = document.querySelector<HTMLButtonElement>("#editorConnectButton")!;
+const editorBackButton = document.querySelector<HTMLButtonElement>("#editorBackButton")!;
+const editorForwardButton = document.querySelector<HTMLButtonElement>("#editorForwardButton")!;
 const editorLoadButton = document.querySelector<HTMLButtonElement>("#editorLoadButton")!;
-const editorContent = document.querySelector<HTMLTextAreaElement>("#editorContent")!;
+const editorContent = document.querySelector<HTMLElement>("#editorContent")!;
 const editorSaveButton = document.querySelector<HTMLButtonElement>("#editorSaveButton")!;
 const editorRevisionSelect = document.querySelector<HTMLSelectElement>("#editorRevisionSelect")!;
 const editorRestoreButton = document.querySelector<HTMLButtonElement>("#editorRestoreButton")!;
@@ -770,7 +779,51 @@ applyObjectCodeButton.addEventListener("click", applyObjectCode);
 
 type EditorTreeNode = {kind: "directory"; name: string; children: EditorTreeNode[]} | {kind: "file"; name: string; id: string};
 type EditorDocument = {id: string; name: string; description: string; content: string; sha256: string; revisions: string[]};
+type EditorLocation = {fileId: string; position: number};
 let editorFileId = "";
+let editorView: EditorView | null = null;
+const editorBackHistory: EditorLocation[] = [];
+const editorForwardHistory: EditorLocation[] = [];
+
+function currentEditorLocation(): EditorLocation | null {
+    return editorFileId && editorView ? {fileId: editorFileId, position: editorView.state.selection.main.head} : null;
+}
+
+function updateEditorHistoryButtons(): void {
+    editorBackButton.disabled = editorBackHistory.length === 0;
+    editorForwardButton.disabled = editorForwardHistory.length === 0;
+}
+
+function createCodeEditor(content: string, position = 0): void {
+    editorView?.destroy();
+    editorContent.replaceChildren();
+    editorView = new EditorView({
+        state: EditorState.create({
+            doc: content,
+            selection: {anchor: Math.min(position, content.length)},
+            extensions: [
+                history(),
+                keymap.of([...defaultKeymap, ...historyKeymap]),
+                python(),
+                syntaxHighlighting(defaultHighlightStyle),
+                EditorView.lineWrapping,
+                EditorView.domEventHandlers({
+                    mousedown: (event, view) => {
+                        if (!(event.ctrlKey || event.metaKey)) return false;
+                        const positionAtPointer = view.posAtCoords({x: event.clientX, y: event.clientY});
+                        const word = positionAtPointer === null ? null : view.state.wordAt(positionAtPointer);
+                        if (!word) return false;
+                        event.preventDefault();
+                        void goToDefinition(view.state.sliceDoc(word.from, word.to));
+                        return true;
+                    },
+                }),
+            ],
+        }),
+        parent: editorContent,
+    });
+    editorView.focus();
+}
 
 async function editorRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
     await refreshPublishedBackendUrl();
@@ -837,6 +890,12 @@ function renderEditorTree(nodes: EditorTreeNode[]): DocumentFragment {
             button.textContent = node.name;
             button.dataset.fileId = node.id;
             button.addEventListener("click", () => {
+                const previousLocation = currentEditorLocation();
+                if (previousLocation && previousLocation.fileId !== node.id) {
+                    editorBackHistory.push(previousLocation);
+                    editorForwardHistory.length = 0;
+                    updateEditorHistoryButtons();
+                }
                 editorFileId = node.id;
                 void loadEditorFile();
             });
@@ -858,13 +917,13 @@ async function loadEditorTree(): Promise<void> {
     }
 }
 
-async function loadEditorFile(): Promise<void> {
+async function loadEditorFile(position = 0): Promise<void> {
     const fileId = editorFileId;
     if (!fileId || !editorToken) return;
     editorStatus("Loading source file…");
     try {
         const file = await editorRequest<EditorDocument>(`/files/${encodeURIComponent(fileId)}`);
-        editorContent.value = file.content;
+        createCodeEditor(file.content, position);
         editorRevision = file.sha256;
         editorCurrentFile.textContent = file.description;
         editorDescription.textContent = `${file.name} · ${file.description}`;
@@ -877,7 +936,6 @@ async function loadEditorFile(): Promise<void> {
             option.textContent = revision === "original" ? "Original before browser edits" : revision;
             return option;
         }));
-        editorContent.disabled = false;
         editorSaveButton.disabled = false;
         editorRevisionSelect.disabled = file.revisions.length === 0;
         editorRestoreButton.disabled = file.revisions.length === 0;
@@ -885,6 +943,36 @@ async function loadEditorFile(): Promise<void> {
     } catch (error) {
         editorStatus(error instanceof Error ? error.message : "Could not load source file.");
     }
+}
+
+async function goToDefinition(symbol: string): Promise<void> {
+    if (!editorFileId || !editorToken || !/^[A-Za-z_]\w*$/.test(symbol)) return;
+    editorStatus(`Finding definition of ${symbol}…`);
+    try {
+        const result = await editorRequest<{id: string; line: number}>(`/definitions?file_id=${encodeURIComponent(editorFileId)}&symbol=${encodeURIComponent(symbol)}`);
+        const previousLocation = currentEditorLocation();
+        if (previousLocation) editorBackHistory.push(previousLocation);
+        editorForwardHistory.length = 0;
+        editorFileId = result.id;
+        await loadEditorFile();
+        if (editorView) {
+            const target = editorView.state.doc.line(Math.min(result.line, editorView.state.doc.lines)).from;
+            editorView.dispatch({selection: {anchor: target}, scrollIntoView: true});
+        }
+        updateEditorHistoryButtons();
+    } catch (error) {
+        editorStatus(error instanceof Error ? error.message : `No definition found for ${symbol}.`);
+    }
+}
+
+async function moveEditorHistory(source: EditorLocation[], destination: EditorLocation[]): Promise<void> {
+    const target = source.pop();
+    const current = currentEditorLocation();
+    if (!target) return;
+    if (current) destination.push(current);
+    editorFileId = target.fileId;
+    await loadEditorFile(target.position);
+    updateEditorHistoryButtons();
 }
 
 async function saveEditorFile(): Promise<void> {
@@ -895,10 +983,11 @@ async function saveEditorFile(): Promise<void> {
     try {
         await editorRequest<{sha256: string; restarting: boolean}>(`/files/${encodeURIComponent(editorFileId)}`, {
             method: "PUT",
-            body: JSON.stringify({content: editorContent.value, expected_sha256: editorRevision}),
+            body: JSON.stringify({content: editorView?.state.doc.toString() ?? "", expected_sha256: editorRevision}),
         });
         editorStatus("Saved. The backend is restarting; wait a few seconds, then reload this file.");
-        editorContent.disabled = true;
+        editorView?.destroy();
+        editorView = null;
     } catch (error) {
         editorStatus(error instanceof Error ? error.message : "Could not save source file.");
     } finally {
@@ -918,7 +1007,8 @@ async function restoreEditorFile(): Promise<void> {
             body: JSON.stringify({revision, expected_sha256: editorRevision}),
         });
         editorStatus("Backup restored. Wait for the backend to restart, then reload this file.");
-        editorContent.disabled = true;
+        editorView?.destroy();
+        editorView = null;
     } catch (error) {
         editorStatus(error instanceof Error ? error.message : "Could not restore backup.");
     } finally {
@@ -1002,12 +1092,14 @@ editorConnectButton.addEventListener("click", connectEditor);
 editorPassword.addEventListener("keydown", (event) => {
     if (event.key === "Enter") void connectEditor();
 });
-editorLoadButton.addEventListener("click", loadEditorFile);
+editorLoadButton.addEventListener("click", () => void loadEditorFile());
 editorTreeReloadButton.addEventListener("click", () => void loadEditorTree());
 editorSaveButton.addEventListener("click", saveEditorFile);
 editorRestoreButton.addEventListener("click", restoreEditorFile);
 editorLogsRefreshButton.addEventListener("click", () => void refreshEditorLogs());
 editorLogsExpandButton.addEventListener("click", () => setLogsOpen(!workbench.classList.contains("logs-open")));
+editorBackButton.addEventListener("click", () => void moveEditorHistory(editorBackHistory, editorForwardHistory));
+editorForwardButton.addEventListener("click", () => void moveEditorHistory(editorForwardHistory, editorBackHistory));
 window.setInterval(() => {
     if (editorToken && document.querySelector("#demo-section")?.classList.contains("active")) void refreshEditorLogs(true);
 }, 5000);

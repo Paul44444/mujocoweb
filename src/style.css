@@ -1278,6 +1278,39 @@ body.panel-open {
     white-space: pre;
 }
 
+.code-editor-content {
+    overflow: auto;
+    border: 1px solid #3f3f46;
+    border-radius: 8px;
+    background: #111113;
+}
+
+.code-editor-content .cm-editor {
+    min-height: 100%;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.82rem;
+}
+
+.code-editor-content .cm-scroller {
+    min-height: 420px;
+    overflow: auto;
+}
+
+.code-editor-content .cm-gutters {
+    border-right-color: #3f3f46;
+    background: #18181b;
+    color: #71717a;
+}
+
+.code-editor-content .cm-content {
+    caret-color: #a3e635;
+}
+
+.code-editor-content .cm-activeLine,
+.code-editor-content .cm-activeLineGutter {
+    background: rgba(118, 185, 0, 0.08);
+}
+
 .editor-logs-panel {
     margin-top: 28px;
     padding-top: 18px;
