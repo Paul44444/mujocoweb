@@ -165,6 +165,15 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           </div>
         </div>
 
+        <div class="live-asset-bar" aria-label="Scene assets">
+          <span>Scene assets</span>
+          <button type="button" draggable="true" data-live-asset="box">▣ Cube</button>
+          <button type="button" draggable="true" data-live-asset="sphere">● Sphere</button>
+          <button type="button" draggable="true" data-live-asset="cylinder">▯ Cylinder</button>
+          <button type="button" draggable="true" data-live-asset="hammer">⚒ Hammer</button>
+          <small>Drag into scene</small>
+        </div>
+
         <div class="metadata">
           <span>Episode: <strong id="episodeValue">—</strong></span>
           <span>Step: <strong id="stepValue">—</strong></span>
@@ -735,9 +744,9 @@ function renderSceneDraft(): void {
     sceneDraft.textContent = sceneAssets.map((item) => `${item.asset} · x ${item.position.join(", ")} · scale ${item.scale.join(", ")}`).join("\n");
 }
 
-function addSceneAsset(asset: string): void {
+function addSceneAsset(asset: string, position = [0.05 * (sceneAssets.length + 1), 0, 0.04]): void {
     const index = sceneAssets.length + 1;
-    sceneAssets.push({id: `${asset}-${index}`, asset, position: [0.05 * index, 0, 0.04], rotation: [0, 0, 0], scale: asset === "hammer" ? [1, 1, 1] : [0.04, 0.04, 0.04]});
+    sceneAssets.push({id: `${asset}-${index}`, asset, position, rotation: [0, 0, 0], scale: asset === "hammer" ? [1, 1, 1] : [0.04, 0.04, 0.04]});
     renderSceneDraft();
 }
 
@@ -1643,6 +1652,20 @@ simulationImage.addEventListener("lostpointercapture", (event) => {
     }
 });
 simulationImage.addEventListener("dragstart", (event) => event.preventDefault());
+document.querySelectorAll<HTMLElement>("[data-live-asset]").forEach((asset) => {
+    asset.addEventListener("dragstart", (event) => event.dataTransfer?.setData("application/x-mujoco-asset", asset.dataset.liveAsset ?? "box"));
+});
+simulationImage.addEventListener("dragover", (event) => event.preventDefault());
+simulationImage.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const asset = event.dataTransfer?.getData("application/x-mujoco-asset");
+    if (!asset) return;
+    const rect = simulationImage.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width - 0.5) * 0.35;
+    const y = (0.5 - (event.clientY - rect.top) / rect.height) * 0.35;
+    addSceneAsset(asset, [Number(x.toFixed(3)), Number(y.toFixed(3)), 0.04]);
+    sceneMessage.textContent = `${asset} added to the scene draft. Save it in Experiment setup.`;
+});
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 setupButton.addEventListener("click", openSetupPanel);
