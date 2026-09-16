@@ -112,7 +112,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           </div>
           <p id="editorLogsMessage" class="generator-message" aria-live="polite"></p>
           <pre id="editorLogsOutput" class="editor-logs-output" aria-label="Backend logs">Enter the editor password to see live logs.</pre>
-          <p class="workbench-log-caption">Last 120 lines · refreshes every 3 seconds</p>
+          <p class="workbench-log-caption">Last 2,000 lines · refreshes every 5 seconds</p>
         </aside>
 
         <div id="simulationPane" class="simulation-pane">
@@ -951,7 +951,7 @@ editorLogsRefreshButton.addEventListener("click", refreshEditorLogs);
 editorLogsExpandButton.addEventListener("click", () => setLogsOpen(!workbench.classList.contains("logs-open")));
 window.setInterval(() => {
     if (editorToken && document.querySelector("#demo-section")?.classList.contains("active")) void refreshEditorLogs();
-}, 3000);
+}, 5000);
 
 function showGeneratedObject(): void {
     if (!generatedObject) {
