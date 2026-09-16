@@ -881,10 +881,20 @@ async function restoreEditorFile(): Promise<void> {
     }
 }
 
-async function refreshEditorLogs(): Promise<void> {
+function hasLogTextSelection(): boolean {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+    return selection.getRangeAt(0).intersectsNode(editorLogsOutput);
+}
+
+async function refreshEditorLogs(preserveSelection = false): Promise<void> {
     if (editorLogsLoading) return;
     if (!editorToken) {
         editorLogsMessage.textContent = "Connect with the editor password to view logs.";
+        return;
+    }
+    if (preserveSelection && hasLogTextSelection()) {
+        editorLogsMessage.textContent = "Auto-refresh paused while text is selected.";
         return;
     }
     editorLogsLoading = true;
@@ -892,6 +902,10 @@ async function refreshEditorLogs(): Promise<void> {
     try {
         const atBottom = editorLogsOutput.scrollTop + editorLogsOutput.clientHeight >= editorLogsOutput.scrollHeight - 30;
         const result = await editorRequest<{logs: string}>("/logs");
+        if (preserveSelection && hasLogTextSelection()) {
+            editorLogsMessage.textContent = "Auto-refresh paused while text is selected.";
+            return;
+        }
         editorLogsOutput.textContent = result.logs || "No backend logs yet.";
         if (atBottom) editorLogsOutput.scrollTop = editorLogsOutput.scrollHeight;
         editorLogsMessage.textContent = "";
@@ -947,10 +961,10 @@ editorFileSelect.addEventListener("change", loadEditorFile);
 editorLoadButton.addEventListener("click", loadEditorFile);
 editorSaveButton.addEventListener("click", saveEditorFile);
 editorRestoreButton.addEventListener("click", restoreEditorFile);
-editorLogsRefreshButton.addEventListener("click", refreshEditorLogs);
+editorLogsRefreshButton.addEventListener("click", () => void refreshEditorLogs());
 editorLogsExpandButton.addEventListener("click", () => setLogsOpen(!workbench.classList.contains("logs-open")));
 window.setInterval(() => {
-    if (editorToken && document.querySelector("#demo-section")?.classList.contains("active")) void refreshEditorLogs();
+    if (editorToken && document.querySelector("#demo-section")?.classList.contains("active")) void refreshEditorLogs(true);
 }, 5000);
 
 function showGeneratedObject(): void {
