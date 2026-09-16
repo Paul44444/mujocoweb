@@ -96,6 +96,23 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         </p>
       </section>
 
+      <div id="workbench" class="workbench">
+        <aside id="editorLogsPanel" class="workbench-logs" aria-label="Backend logs">
+          <div class="workbench-logs-header">
+            <div><span class="panel-eyebrow">Live output</span><h2>Backend log</h2></div>
+            <button id="editorLogsRefreshButton" class="secondary-button" type="button" aria-label="Refresh backend logs">↻</button>
+          </div>
+          <div class="workbench-log-auth">
+            <label class="field-label" for="editorPassword">Editor password</label>
+            <input id="editorPassword" class="setup-input" type="password" autocomplete="off" placeholder="Unlock logs and code" />
+            <button id="editorConnectButton" class="secondary-button" type="button">Unlock</button>
+          </div>
+          <p id="editorLogsMessage" class="generator-message" aria-live="polite"></p>
+          <pre id="editorLogsOutput" class="editor-logs-output" aria-label="Backend logs">Enter the editor password to see live logs.</pre>
+          <p class="workbench-log-caption">Last 120 lines · refreshes every 3 seconds</p>
+        </aside>
+
+        <div id="simulationPane" class="simulation-pane">
       <section class="simulation-card">
         <div class="simulation-header">
           <div>
@@ -112,7 +129,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               </svg>
               Experiment setup
             </button>
-            <button id="codeEditorButton" class="setup-button" type="button" aria-haspopup="dialog" aria-controls="codeEditorDialog">Code editor</button>
+            <button id="codeEditorButton" class="setup-button" type="button" aria-controls="codeEditorPane" aria-expanded="false">Code editor</button>
             <button id="startButton" type="button">
               <span class="playback-icon play-icon" aria-hidden="true"></span>
               <span class="playback-label">Start simulation</span>
@@ -161,6 +178,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <line x1="12" y1="8" x2="12.01" y2="8"/>
         </svg>
         <span id="interactionHint">Click on the simulation window to set target positions for the robotic hand</span>
+      </div>
+        </div>
       </div>
 
       <div class="theory-section">
@@ -489,22 +508,20 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     </form>
   </aside>
 
-  <div id="codeEditorOverlay" class="code-editor-overlay" hidden>
-    <section id="codeEditorDialog" class="code-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="codeEditorTitle">
+  <aside id="codeEditorPane" class="code-editor-pane" aria-label="Source editor">
+    <button id="codeEditorRailButton" class="code-editor-rail" type="button" aria-label="Open code editor">Code editor</button>
+    <section id="codeEditorDialog" class="code-editor-dialog" aria-labelledby="codeEditorTitle">
       <header class="code-editor-header">
         <div>
           <p class="panel-eyebrow">Advanced · authenticated</p>
           <h2 id="codeEditorTitle">MuJoCo source editor</h2>
           <p>Changes to Python run on the backend computer. A syntax check is not a security check.</p>
         </div>
-        <button id="closeCodeEditorButton" class="icon-button" type="button" aria-label="Close code editor">×</button>
+        <button id="closeCodeEditorButton" class="secondary-button" type="button" aria-label="Return to simulation">← Simulation</button>
       </header>
       <div class="code-editor-body">
-        <label class="field-label" for="editorPassword">Editor password</label>
-        <input id="editorPassword" class="setup-input" type="password" autocomplete="off" placeholder="Enter the private editor password" />
         <div class="code-editor-toolbar">
           <select id="editorFileSelect" class="setup-select" aria-label="Source file" disabled><option>Select a file</option></select>
-          <button id="editorConnectButton" class="secondary-button" type="button">Connect</button>
           <button id="editorLoadButton" class="secondary-button" type="button" disabled>Reload file</button>
         </div>
         <p id="editorDescription" class="experimental-note"></p>
@@ -515,18 +532,9 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <button id="editorRestoreButton" class="secondary-button" type="button" disabled>Restore backup</button>
         </div>
         <p id="editorMessage" class="generator-message" aria-live="polite"></p>
-        <details id="editorLogsPanel" class="editor-logs-panel">
-          <summary>Backend logs · print() output</summary>
-          <div class="editor-logs-toolbar">
-            <span>Last 120 lines · updates every 3 seconds while open</span>
-            <button id="editorLogsRefreshButton" class="secondary-button" type="button">Refresh</button>
-          </div>
-          <pre id="editorLogsOutput" class="editor-logs-output" aria-label="Backend logs">Connect to the editor to view logs.</pre>
-          <p id="editorLogsMessage" class="generator-message" aria-live="polite"></p>
-        </details>
       </div>
     </section>
-  </div>
+  </aside>
 `;
 
 const startButton =
@@ -581,7 +589,11 @@ const generatedObjectName = document.querySelector<HTMLElement>("#generatedObjec
 const generatedObjectSummary = document.querySelector<HTMLParagraphElement>("#generatedObjectSummary")!;
 const generatedObjectParts = document.querySelector<HTMLElement>("#generatedObjectParts")!;
 const codeEditorButton = document.querySelector<HTMLButtonElement>("#codeEditorButton")!;
-const codeEditorOverlay = document.querySelector<HTMLDivElement>("#codeEditorOverlay")!;
+const codeEditorRailButton = document.querySelector<HTMLButtonElement>("#codeEditorRailButton")!;
+const codeEditorPane = document.querySelector<HTMLElement>("#codeEditorPane")!;
+const codeEditorDialog = document.querySelector<HTMLElement>("#codeEditorDialog")!;
+const workbench = document.querySelector<HTMLElement>("#workbench")!;
+const simulationPane = document.querySelector<HTMLElement>("#simulationPane")!;
 const closeCodeEditorButton = document.querySelector<HTMLButtonElement>("#closeCodeEditorButton")!;
 const editorPassword = document.querySelector<HTMLInputElement>("#editorPassword")!;
 const editorFileSelect = document.querySelector<HTMLSelectElement>("#editorFileSelect")!;
@@ -593,10 +605,11 @@ const editorRevisionSelect = document.querySelector<HTMLSelectElement>("#editorR
 const editorRestoreButton = document.querySelector<HTMLButtonElement>("#editorRestoreButton")!;
 const editorMessage = document.querySelector<HTMLParagraphElement>("#editorMessage")!;
 const editorDescription = document.querySelector<HTMLParagraphElement>("#editorDescription")!;
-const editorLogsPanel = document.querySelector<HTMLDetailsElement>("#editorLogsPanel")!;
 const editorLogsRefreshButton = document.querySelector<HTMLButtonElement>("#editorLogsRefreshButton")!;
 const editorLogsOutput = document.querySelector<HTMLElement>("#editorLogsOutput")!;
 const editorLogsMessage = document.querySelector<HTMLParagraphElement>("#editorLogsMessage")!;
+
+workbench.appendChild(codeEditorPane);
 const objectCodeInput = document.querySelector<HTMLTextAreaElement>("#objectCodeInput")!;
 const objectCodeMessage = document.querySelector<HTMLParagraphElement>("#objectCodeMessage")!;
 const loadObjectCodeButton = document.querySelector<HTMLButtonElement>("#loadObjectCodeButton")!;
@@ -787,10 +800,13 @@ async function connectEditor(): Promise<void> {
         editorLoadButton.disabled = false;
         editorStatus("Connected. Select a file to edit.");
         await loadEditorFile();
-        if (editorLogsPanel.open) void refreshEditorLogs();
+        editorLogsMessage.textContent = "";
+        void refreshEditorLogs();
     } catch (error) {
         editorToken = "";
-        editorStatus(error instanceof Error ? error.message : "Could not connect to editor.");
+        const message = error instanceof Error ? error.message : "Could not connect to editor.";
+        editorStatus(message);
+        editorLogsMessage.textContent = message;
     } finally {
         editorConnectButton.disabled = false;
     }
@@ -882,25 +898,41 @@ async function refreshEditorLogs(): Promise<void> {
     }
 }
 
-codeEditorButton.addEventListener("click", () => {
-    codeEditorOverlay.hidden = false;
-    editorPassword.focus();
-});
-closeCodeEditorButton.addEventListener("click", () => { codeEditorOverlay.hidden = true; });
-codeEditorOverlay.addEventListener("click", (event) => {
-    if (event.target === codeEditorOverlay) codeEditorOverlay.hidden = true;
-});
+function setEditorOpen(open: boolean): void {
+    workbench.classList.toggle("editor-open", open);
+    codeEditorButton.setAttribute("aria-expanded", String(open));
+    codeEditorDialog.inert = !open;
+    codeEditorDialog.setAttribute("aria-hidden", String(!open));
+    if (open) {
+        if (!editorToken) editorPassword.focus();
+        else editorFileSelect.focus();
+    } else {
+        codeEditorButton.focus();
+    }
+}
+
+codeEditorDialog.inert = true;
+codeEditorDialog.setAttribute("aria-hidden", "true");
+codeEditorButton.addEventListener("click", () => setEditorOpen(true));
+codeEditorRailButton.addEventListener("click", () => setEditorOpen(true));
+closeCodeEditorButton.addEventListener("click", () => setEditorOpen(false));
+simulationPane.addEventListener("click", (event) => {
+    if (!workbench.classList.contains("editor-open")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setEditorOpen(false);
+}, true);
 editorConnectButton.addEventListener("click", connectEditor);
+editorPassword.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") void connectEditor();
+});
 editorFileSelect.addEventListener("change", loadEditorFile);
 editorLoadButton.addEventListener("click", loadEditorFile);
 editorSaveButton.addEventListener("click", saveEditorFile);
 editorRestoreButton.addEventListener("click", restoreEditorFile);
 editorLogsRefreshButton.addEventListener("click", refreshEditorLogs);
-editorLogsPanel.addEventListener("toggle", () => {
-    if (editorLogsPanel.open && !codeEditorOverlay.hidden) void refreshEditorLogs();
-});
 window.setInterval(() => {
-    if (!codeEditorOverlay.hidden && editorLogsPanel.open && editorToken) void refreshEditorLogs();
+    if (editorToken && document.querySelector("#demo-section")?.classList.contains("active")) void refreshEditorLogs();
 }, 3000);
 
 function showGeneratedObject(): void {
@@ -1398,9 +1430,9 @@ setupForm.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && setupPanel.classList.contains("open")) {
-        closeSetupPanel();
-    }
+    if (event.key !== "Escape") return;
+    if (setupPanel.classList.contains("open")) closeSetupPanel();
+    else if (workbench.classList.contains("editor-open")) setEditorOpen(false);
 });
 
 window.addEventListener("beforeunload", () => {
