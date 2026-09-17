@@ -1477,7 +1477,7 @@ function zoomCamera(event: WheelEvent): void {
     sendSimulationCommand({type: "camera_zoom", delta: Math.sign(event.deltaY)});
 }
 
-function connectToSimulation(fallbackAttempt = false): void {
+function connectToSimulation(fallbackAttempt = false, editorPreview = false): void {
     if (
         socket &&
         (socket.readyState === WebSocket.OPEN ||
@@ -1491,6 +1491,7 @@ function connectToSimulation(fallbackAttempt = false): void {
 
     const websocketUrl = backendWebSocketUrl("/ws/simulation");
     websocketUrl.searchParams.set("task", selectedTaskId);
+    if (editorPreview) websocketUrl.searchParams.set("editor", "1");
     if (generatedObject && selectedTaskId === "relocate") {
         websocketUrl.searchParams.set("object", JSON.stringify(generatedObject));
     }
@@ -1541,7 +1542,9 @@ function connectToSimulation(fallbackAttempt = false): void {
             return;
         }
 
-        if (statusText.textContent !== "Simulation finished") {
+        if (editorPreview) {
+            setStatus("Editor scene ready — drag assets in, then start simulation", "idle");
+        } else if (statusText.textContent !== "Simulation finished") {
             setStatus(
                 `Disconnected (${event.code}${event.reason ? `: ${event.reason}` : ""})`,
                 "idle",
@@ -1713,4 +1716,8 @@ window.addEventListener("beforeunload", () => {
     if (currentImageUrl) {
         URL.revokeObjectURL(currentImageUrl);
     }
+});
+
+window.addEventListener("load", () => {
+    if (!simulationImage.classList.contains("visible")) connectToSimulation(false, true);
 });
