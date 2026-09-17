@@ -1511,6 +1511,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false): vo
     if (editorPreview) {
         websocketUrl.searchParams.set("editor", "1");
         websocketUrl.searchParams.set("scene", JSON.stringify(sceneAssets));
+        if (previewCamera) websocketUrl.searchParams.set("camera", JSON.stringify(previewCamera));
     } else if (generatedObject && selectedTaskId === "relocate") {
         websocketUrl.searchParams.set("object", JSON.stringify(generatedObject));
     }
