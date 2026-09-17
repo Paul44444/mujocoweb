@@ -1393,7 +1393,7 @@ function updatePlaybackButton(): void {
     const icon = startButton.querySelector<HTMLElement>(".playback-icon")!;
     const label = startButton.querySelector<HTMLElement>(".playback-label")!;
     const connected = socket?.readyState === WebSocket.OPEN;
-    icon.className = `playback-icon ${connected && !isPaused ? "pause-icon" : "play-icon"}`;
+    icon.className = `playback-icon ${connected && !editorPreviewActive && !isPaused ? "pause-icon" : "play-icon"}`;
     label.textContent = connected && !editorPreviewActive ? (isPaused ? "Resume" : "Pause") : "Start simulation";
     startButton.setAttribute("aria-label", label.textContent);
 }
@@ -1497,9 +1497,11 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false): vo
     startButton.disabled = true;
 
     const websocketUrl = backendWebSocketUrl("/ws/simulation");
-    websocketUrl.searchParams.set("task", selectedTaskId);
-    if (editorPreview) websocketUrl.searchParams.set("editor", "1");
-    if (generatedObject && selectedTaskId === "relocate") {
+    websocketUrl.searchParams.set("task", editorPreview ? "relocate" : selectedTaskId);
+    if (editorPreview) {
+        websocketUrl.searchParams.set("editor", "1");
+        websocketUrl.searchParams.set("scene", JSON.stringify(sceneAssets));
+    } else if (generatedObject && selectedTaskId === "relocate") {
         websocketUrl.searchParams.set("object", JSON.stringify(generatedObject));
     }
 
@@ -1546,7 +1548,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false): vo
         if (!connectionOpened && !fallbackAttempt && backendUrl !== RENDER_BACKEND_URL) {
             backendUrl = RENDER_BACKEND_URL;
             setStatus("GPU backend unavailable — connecting to Render…", "connecting");
-            connectToSimulation(true);
+            connectToSimulation(true, editorPreview);
             return;
         }
 
@@ -1664,28 +1666,37 @@ simulationImage.addEventListener("lostpointercapture", (event) => {
 });
 simulationImage.addEventListener("dragstart", (event) => event.preventDefault());
 document.querySelectorAll<HTMLElement>("[data-live-asset]").forEach((asset) => {
-    asset.addEventListener("dragstart", (event) => event.dataTransfer?.setData("application/x-mujoco-asset", asset.dataset.liveAsset ?? "box"));
+    asset.addEventListener("dragstart", (event) => {
+        if (!event.dataTransfer) return;
+        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setData("application/x-mujoco-asset", asset.dataset.liveAsset ?? "box");
+    });
 });
 function dropSceneAsset(event: DragEvent): void {
     event.preventDefault();
     const asset = event.dataTransfer?.getData("application/x-mujoco-asset");
-    if (!asset) return;
+    if (!asset || !["box", "sphere", "cylinder", "hammer"].includes(asset)) return;
     const rect = simulationImage.getBoundingClientRect();
     const x = ((event.clientX - rect.left) / rect.width - 0.5) * 0.35;
     const y = (0.5 - (event.clientY - rect.top) / rect.height) * 0.35;
     addSceneAsset(asset, [Number(x.toFixed(3)), Number(y.toFixed(3)), 0.04]);
-    const shape = asset === "hammer" ? "capsule" : asset === "cylinder" ? "cylinder" : asset === "sphere" ? "sphere" : "box";
-    const size = shape === "sphere" ? [0.04, 0.04, 0.04] : shape === "capsule" ? [0.018, 0.07, 0.018] : [0.04, 0.04, 0.04];
-    generatedObject = {name: `${asset} scene object`, summary: `Asset dropped into the editor scene at ${x.toFixed(2)}, ${y.toFixed(2)}.`, parts: [{shape, size, position: [0, 0, 0], euler: [0, 0, 0], rgba: [0.85, 0.25, 0.12, 1], mass: 0.08}], generator: "scene-editor"};
     if (editorPreviewActive && socket) {
-        editorPreviewActive = false;
-        socket.close();
+        const previous = socket;
+        socket = null;
+        previous.close();
         window.setTimeout(() => connectToSimulation(false, true), 180);
     }
-    sceneMessage.textContent = `${asset} added to the scene draft. Save it in Experiment setup.`;
+    setStatus(`${asset} added — updating GPU editor scene…`, "connecting");
+    sceneMessage.textContent = `${asset} added to the scene. Save it in Experiment setup.`;
 }
-simulationImage.addEventListener("dragover", (event) => event.preventDefault());
-simulationImage.addEventListener("drop", dropSceneAsset);
+const simulationWindow = document.querySelector<HTMLElement>(".simulation-window")!;
+simulationWindow.addEventListener("dragover", (event) => {
+    if (event.dataTransfer?.types.includes("application/x-mujoco-asset")) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+    }
+});
+simulationWindow.addEventListener("drop", dropSceneAsset);
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 setupButton.addEventListener("click", openSetupPanel);
@@ -1736,5 +1747,8 @@ window.addEventListener("beforeunload", () => {
 });
 
 window.addEventListener("load", () => {
-    if (!simulationImage.classList.contains("visible")) connectToSimulation(false, true);
+    void (async () => {
+        await refreshPublishedBackendUrl();
+        if (!simulationImage.classList.contains("visible") && !socket) connectToSimulation(false, true);
+    })();
 });
