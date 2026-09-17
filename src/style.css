@@ -597,6 +597,16 @@ h1 {
 
 .scene-drop-shape { font-size: 1.25rem; line-height: 1; }
 
+.scene-gizmo { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+.scene-gizmo[hidden] { display: none; }
+.scene-gizmo svg { width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.scene-gizmo svg g[data-axis] { cursor: grab; pointer-events: visiblePainted; }
+.scene-gizmo svg g[data-axis]:active { cursor: grabbing; }
+.scene-gizmo-toolbar { position: absolute; z-index: 1; display: flex; align-items: center; gap: 4px; max-width: 190px; padding: 5px; border: 1px solid #71717a; border-radius: 7px; background: rgba(9, 9, 11, 0.9); color: white; pointer-events: auto; }
+.scene-gizmo-toolbar span { max-width: 75px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; }
+.scene-gizmo-toolbar button { padding: 4px 6px; border: 1px solid #52525b; border-radius: 4px; background: #27272a; color: white; cursor: pointer; font-size: 0.7rem; }
+.scene-gizmo-toolbar button.active { border-color: #a3e635; color: #d9f99d; }
+
 #sceneDropLabel { overflow: hidden; text-overflow: ellipsis; }
 
 @media (min-width: 1400px) {

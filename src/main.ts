@@ -163,6 +163,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <span id="sceneDropShape" class="scene-drop-shape">▣</span>
             <span id="sceneDropLabel">Release to place</span>
           </div>
+          <div id="sceneGizmo" class="scene-gizmo" hidden>
+            <div class="scene-gizmo-toolbar"><span id="sceneGizmoName"></span><button type="button" data-gizmo-mode="move" class="active">Move</button><button type="button" data-gizmo-mode="rotate">Rotate</button></div>
+            <svg id="sceneGizmoAxes" aria-label="Drag an axis to transform the selected asset"></svg>
+          </div>
 
           <div class="camera-controls" aria-label="Camera controls">
             <span>Drag to orbit · Scroll or pinch to zoom</span>
@@ -640,6 +644,9 @@ const generatedObjectSummary = document.querySelector<HTMLParagraphElement>("#ge
 const generatedObjectParts = document.querySelector<HTMLElement>("#generatedObjectParts")!;
 const sceneNameInput = document.querySelector<HTMLInputElement>("#sceneNameInput")!;
 const sceneSaveButton = document.querySelector<HTMLButtonElement>("#sceneSaveButton")!;
+const sceneGizmo = document.querySelector<HTMLElement>("#sceneGizmo")!;
+const sceneGizmoAxes = document.querySelector<SVGSVGElement>("#sceneGizmoAxes")!;
+const sceneGizmoName = document.querySelector<HTMLElement>("#sceneGizmoName")!;
 const sceneDraft = document.querySelector<HTMLElement>("#sceneDraft")!;
 const sceneMessage = document.querySelector<HTMLParagraphElement>("#sceneMessage")!;
 const codeEditorButton = document.querySelector<HTMLButtonElement>("#codeEditorButton")!;
@@ -685,6 +692,9 @@ let isPaused = false;
 let editorPreviewActive = false;
 let draggedSceneAsset: string | null = null;
 let previewCamera: {azimuth: number; elevation: number; distance: number; lookat: number[]} | null = null;
+let selectedSceneAsset = -1;
+let gizmoMode: "move" | "rotate" = "move";
+let gizmoDrag: {pointerId: number; axis: number; startX: number; startY: number; position: number[]; rotation: number[]; direction: number[]} | null = null;
 const activePointers = new Map<number, {x: number; y: number}>();
 let cameraDrag: {pointerId: number; x: number; y: number} | null = null;
 let pinchDistance: number | null = null;
@@ -752,7 +762,7 @@ let generatedObject: GeneratedObject | null = null;
 const sceneAssets: {id: string; asset: string; position: number[]; rotation: number[]; scale: number[]}[] = [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03]}];
 
 function renderSceneDraft(): void {
-    sceneDraft.textContent = sceneAssets.map((item) => `${item.asset} · x ${item.position.join(", ")} · scale ${item.scale.join(", ")}`).join("\n");
+    sceneDraft.textContent = sceneAssets.map((item) => `${item.asset} · position ${item.position.join(", ")} · rotation ${item.rotation.join(", ")}° · scale ${item.scale.join(", ")}`).join("\n");
 }
 
 function addSceneAsset(asset: string, position = [0.05 * (sceneAssets.length + 1), 0, 0.04]): void {
@@ -1353,6 +1363,7 @@ function handleSimulationClick(event: MouseEvent): void {
         suppressSimulationClick = false;
         return;
     }
+    if (editorPreviewActive) return;
     if (!taskCatalog[selectedTaskId].interactive) {
         return;
     }
@@ -1383,6 +1394,77 @@ function handleSimulationClick(event: MouseEvent): void {
     );
 
     console.log("Sent target position:", { u, v });
+}
+
+function projectScenePoint(position: number[]): {x: number; y: number} | null {
+    if (!previewCamera || !simulationImage.naturalWidth || !simulationImage.naturalHeight) return null;
+    const {azimuth, elevation, distance, lookat} = previewCamera;
+    const az = azimuth * Math.PI / 180;
+    const el = elevation * Math.PI / 180;
+    const camera = [lookat[0] + distance * Math.cos(el) * Math.cos(az), lookat[1] - distance * Math.cos(el) * Math.sin(az), lookat[2] - distance * Math.sin(el)];
+    const normalize = (v: number[]) => v.map((value) => value / Math.hypot(...v));
+    const cross = (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const forward = normalize(lookat.map((value, i) => value - camera[i]));
+    const right = normalize(cross(forward, [0, 0, 1]));
+    const up = cross(right, forward);
+    const relative = position.map((value, i) => value - camera[i]);
+    const dot = (a: number[], b: number[]) => a.reduce((sum, value, i) => sum + value * b[i], 0);
+    const depth = dot(relative, forward);
+    if (depth <= 0) return null;
+    const halfHeight = Math.tan(45 * Math.PI / 360);
+    const aspect = simulationImage.naturalWidth / simulationImage.naturalHeight;
+    const u = (dot(relative, right) / depth / (aspect * halfHeight) + 1) / 2;
+    const v = (1 - dot(relative, up) / depth / halfHeight) / 2;
+    const rect = simulationImage.getBoundingClientRect();
+    const scale = Math.min(rect.width / simulationImage.naturalWidth, rect.height / simulationImage.naturalHeight);
+    const width = simulationImage.naturalWidth * scale;
+    const height = simulationImage.naturalHeight * scale;
+    const windowRect = simulationWindow.getBoundingClientRect();
+    return {x: rect.left + (rect.width - width) / 2 + u * width - windowRect.left, y: rect.top + (rect.height - height) / 2 + v * height - windowRect.top};
+}
+
+function renderSceneGizmo(): void {
+    const asset = sceneAssets[selectedSceneAsset];
+    const center = asset && editorPreviewActive ? projectScenePoint(asset.position) : null;
+    sceneGizmo.hidden = !center;
+    if (!center) return;
+    sceneGizmoName.textContent = asset.id;
+    const bounds = simulationWindow.getBoundingClientRect();
+    sceneGizmoAxes.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
+    const colors = ["#ef4444", "#22c55e", "#3b82f6"];
+    const labels = ["X", "Y", "Z"];
+    const basis = [[0.16, 0, 0], [0, 0.16, 0], [0, 0, 0.16]];
+    const axes = basis.map((offset, axis) => {
+        const end = projectScenePoint(asset.position.map((value, i) => value + offset[i]));
+        if (!end) return "";
+        const dx = end.x - center.x;
+        const dy = end.y - center.y;
+        const length = Math.hypot(dx, dy) || 1;
+        const x = center.x + dx / length * 64;
+        const y = center.y + dy / length * 64;
+        return `<g data-axis="${axis}"><line x1="${center.x}" y1="${center.y}" x2="${x}" y2="${y}" stroke="transparent" stroke-width="24"/><line x1="${center.x}" y1="${center.y}" x2="${x}" y2="${y}" stroke="${colors[axis]}" stroke-width="4" marker-end="url(#gizmoArrow)"/><circle cx="${x}" cy="${y}" r="13" fill="${colors[axis]}"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="white" font-size="12" font-weight="bold">${labels[axis]}</text></g>`;
+    }).join("");
+    sceneGizmoAxes.innerHTML = `<defs><marker id="gizmoArrow" markerWidth="5" markerHeight="5" refX="3" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="white"/></marker></defs><circle cx="${center.x}" cy="${center.y}" r="10" fill="#fafafa" stroke="#18181b" stroke-width="3"/>${axes}`;
+    const toolbar = sceneGizmo.querySelector<HTMLElement>(".scene-gizmo-toolbar")!;
+    toolbar.style.left = `${Math.max(8, Math.min(bounds.width - 190, center.x - 85))}px`;
+    toolbar.style.top = `${Math.max(8, center.y - 112)}px`;
+}
+
+function pickSceneAsset(event: PointerEvent): boolean {
+    const bounds = simulationWindow.getBoundingClientRect();
+    const x = event.clientX - bounds.left;
+    const y = event.clientY - bounds.top;
+    let nearest = -1;
+    let distance = 35;
+    sceneAssets.forEach((asset, index) => {
+        const point = projectScenePoint(asset.position);
+        if (!point) return;
+        const separation = Math.hypot(point.x - x, point.y - y);
+        if (separation < distance) { distance = separation; nearest = index; }
+    });
+    selectedSceneAsset = nearest;
+    renderSceneGizmo();
+    return nearest >= 0;
 }
 
 function sendSimulationCommand(command: Record<string, unknown>): boolean {
@@ -1428,6 +1510,7 @@ async function handlePlaybackButton(): Promise<void> {
 
 function beginCameraDrag(event: PointerEvent): void {
     if (!socket || socket.readyState !== WebSocket.OPEN || event.button !== 0) return;
+    if (editorPreviewActive && pickSceneAsset(event)) { event.preventDefault(); return; }
     event.preventDefault();
     activePointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
     cameraGestureMoved = false;
@@ -1593,7 +1676,7 @@ function handleTextMessage(message: string): void {
         const data = JSON.parse(message);
 
         if (data.type === "frame_metadata") {
-            if (data.editor_preview && data.camera) previewCamera = data.camera;
+            if (data.editor_preview && data.camera) { previewCamera = data.camera; renderSceneGizmo(); }
             episodeValue.textContent = String(data.episode ?? "—");
             stepValue.textContent = String(data.step ?? "—");
 
@@ -1772,6 +1855,8 @@ function dropSceneAsset(event: DragEvent): void {
         return;
     }
     addSceneAsset(asset, position);
+    selectedSceneAsset = sceneAssets.length - 1;
+    renderSceneGizmo();
     if (editorPreviewActive && socket) {
         const previous = socket;
         socket = null;
@@ -1782,6 +1867,46 @@ function dropSceneAsset(event: DragEvent): void {
     sceneMessage.textContent = `${asset} added to the scene. Save it in Experiment setup.`;
 }
 const simulationWindow = document.querySelector<HTMLElement>(".simulation-window")!;
+sceneGizmo.querySelectorAll<HTMLButtonElement>("[data-gizmo-mode]").forEach((button) => button.addEventListener("click", () => {
+    gizmoMode = button.dataset.gizmoMode === "rotate" ? "rotate" : "move";
+    sceneGizmo.querySelectorAll("[data-gizmo-mode]").forEach((item) => item.classList.toggle("active", item === button));
+}));
+sceneGizmoAxes.addEventListener("pointerdown", (event) => {
+    const target = (event.target as Element).closest<SVGGElement>("[data-axis]");
+    if (!target || selectedSceneAsset < 0 || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const axis = Number(target.dataset.axis);
+    const asset = sceneAssets[selectedSceneAsset];
+    const center = projectScenePoint(asset.position);
+    const endpoint = projectScenePoint(asset.position.map((value, i) => value + (i === axis ? 0.16 : 0)));
+    if (!center || !endpoint) return;
+    const length = Math.hypot(endpoint.x - center.x, endpoint.y - center.y) || 1;
+    gizmoDrag = {pointerId: event.pointerId, axis, startX: event.clientX, startY: event.clientY, position: [...asset.position], rotation: [...asset.rotation], direction: [(endpoint.x - center.x) / length, (endpoint.y - center.y) / length]};
+    sceneGizmoAxes.setPointerCapture(event.pointerId);
+});
+sceneGizmoAxes.addEventListener("pointermove", (event) => {
+    if (!gizmoDrag || gizmoDrag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const asset = sceneAssets[selectedSceneAsset];
+    const deltaX = event.clientX - gizmoDrag.startX;
+    const deltaY = event.clientY - gizmoDrag.startY;
+    if (gizmoMode === "move") {
+        const pixels = deltaX * gizmoDrag.direction[0] + deltaY * gizmoDrag.direction[1];
+        asset.position[gizmoDrag.axis] = Number(Math.max(gizmoDrag.axis === 2 ? 0.01 : -1, Math.min(1, gizmoDrag.position[gizmoDrag.axis] + pixels * 0.16 / 64)).toFixed(3));
+    } else {
+        asset.rotation[gizmoDrag.axis] = Number((gizmoDrag.rotation[gizmoDrag.axis] + (deltaX - deltaY) * 0.8).toFixed(1));
+    }
+    renderSceneGizmo();
+    sendSimulationCommand({type: "scene_transform", index: selectedSceneAsset, position: asset.position, rotation: asset.rotation});
+});
+function finishGizmoDrag(event: PointerEvent): void {
+    if (!gizmoDrag || gizmoDrag.pointerId !== event.pointerId) return;
+    gizmoDrag = null;
+    renderSceneDraft();
+}
+sceneGizmoAxes.addEventListener("pointerup", finishGizmoDrag);
+sceneGizmoAxes.addEventListener("pointercancel", finishGizmoDrag);
 simulationWindow.addEventListener("dragover", (event) => {
     if (event.dataTransfer?.types.includes("application/x-mujoco-asset")) {
         event.preventDefault();
