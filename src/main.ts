@@ -1666,8 +1666,7 @@ simulationImage.addEventListener("dragstart", (event) => event.preventDefault())
 document.querySelectorAll<HTMLElement>("[data-live-asset]").forEach((asset) => {
     asset.addEventListener("dragstart", (event) => event.dataTransfer?.setData("application/x-mujoco-asset", asset.dataset.liveAsset ?? "box"));
 });
-simulationImage.addEventListener("dragover", (event) => event.preventDefault());
-simulationImage.addEventListener("drop", (event) => {
+function dropSceneAsset(event: DragEvent): void {
     event.preventDefault();
     const asset = event.dataTransfer?.getData("application/x-mujoco-asset");
     if (!asset) return;
@@ -1675,8 +1674,18 @@ simulationImage.addEventListener("drop", (event) => {
     const x = ((event.clientX - rect.left) / rect.width - 0.5) * 0.35;
     const y = (0.5 - (event.clientY - rect.top) / rect.height) * 0.35;
     addSceneAsset(asset, [Number(x.toFixed(3)), Number(y.toFixed(3)), 0.04]);
+    const shape = asset === "hammer" ? "capsule" : asset === "cylinder" ? "cylinder" : asset === "sphere" ? "sphere" : "box";
+    const size = shape === "sphere" ? [0.04, 0.04, 0.04] : shape === "capsule" ? [0.018, 0.07, 0.018] : [0.04, 0.04, 0.04];
+    generatedObject = {name: `${asset} scene object`, summary: `Asset dropped into the editor scene at ${x.toFixed(2)}, ${y.toFixed(2)}.`, parts: [{shape, size, position: [0, 0, 0], euler: [0, 0, 0], rgba: [0.85, 0.25, 0.12, 1], mass: 0.08}], generator: "scene-editor"};
+    if (editorPreviewActive && socket) {
+        editorPreviewActive = false;
+        socket.close();
+        window.setTimeout(() => connectToSimulation(false, true), 180);
+    }
     sceneMessage.textContent = `${asset} added to the scene draft. Save it in Experiment setup.`;
-});
+}
+simulationImage.addEventListener("dragover", (event) => event.preventDefault());
+simulationImage.addEventListener("drop", dropSceneAsset);
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 setupButton.addEventListener("click", openSetupPanel);
