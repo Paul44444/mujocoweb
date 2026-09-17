@@ -159,6 +159,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <p>Press "Start Simulation" to begin</p>
           </div>
 
+          <div id="sceneDropPreview" class="scene-drop-preview" hidden aria-hidden="true">
+            <span id="sceneDropShape" class="scene-drop-shape">▣</span>
+            <span id="sceneDropLabel">Release to place</span>
+          </div>
+
           <div class="camera-controls" aria-label="Camera controls">
             <span>Drag to orbit · Scroll or pinch to zoom</span>
             <button id="resetCameraButton" type="button" disabled>Reset view</button>
@@ -588,6 +593,9 @@ const simulationImage =
 
 const placeholder =
     document.querySelector<HTMLDivElement>("#placeholder")!;
+const sceneDropPreview = document.querySelector<HTMLDivElement>("#sceneDropPreview")!;
+const sceneDropShape = document.querySelector<HTMLElement>("#sceneDropShape")!;
+const sceneDropLabel = document.querySelector<HTMLElement>("#sceneDropLabel")!;
 
 const statusText =
     document.querySelector<HTMLParagraphElement>("#statusText")!;
@@ -675,6 +683,8 @@ let currentImageUrl: string | null = null;
 let lastFocusedElement: HTMLElement | null = null;
 let isPaused = false;
 let editorPreviewActive = false;
+let draggedSceneAsset: string | null = null;
+let previewCamera: {azimuth: number; elevation: number; distance: number; lookat: number[]} | null = null;
 const activePointers = new Map<number, {x: number; y: number}>();
 let cameraDrag: {pointerId: number; x: number; y: number} | null = null;
 let pinchDistance: number | null = null;
@@ -1508,6 +1518,8 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false): vo
     console.log("Connecting to WebSocket:", websocketUrl);
     const connection = new WebSocket(websocketUrl.toString());
     editorPreviewActive = editorPreview;
+    previewCamera = null;
+    sceneDropPreview.hidden = true;
     socket = connection;
     let connectionOpened = false;
 
@@ -1580,6 +1592,7 @@ function handleTextMessage(message: string): void {
         const data = JSON.parse(message);
 
         if (data.type === "frame_metadata") {
+            if (data.editor_preview && data.camera) previewCamera = data.camera;
             episodeValue.textContent = String(data.episode ?? "—");
             stepValue.textContent = String(data.step ?? "—");
 
@@ -1668,18 +1681,96 @@ simulationImage.addEventListener("dragstart", (event) => event.preventDefault())
 document.querySelectorAll<HTMLElement>("[data-live-asset]").forEach((asset) => {
     asset.addEventListener("dragstart", (event) => {
         if (!event.dataTransfer) return;
+        draggedSceneAsset = asset.dataset.liveAsset ?? "box";
         event.dataTransfer.effectAllowed = "copy";
-        event.dataTransfer.setData("application/x-mujoco-asset", asset.dataset.liveAsset ?? "box");
+        event.dataTransfer.setData("application/x-mujoco-asset", draggedSceneAsset);
+    });
+    asset.addEventListener("dragend", () => {
+        draggedSceneAsset = null;
+        sceneDropPreview.hidden = true;
     });
 });
+
+function sceneImagePoint(event: DragEvent): {u: number; v: number; x: number; y: number} | null {
+    const rect = simulationImage.getBoundingClientRect();
+    const imageWidth = simulationImage.naturalWidth || rect.width;
+    const imageHeight = simulationImage.naturalHeight || rect.height;
+    if (!rect.width || !rect.height || !imageWidth || !imageHeight) return null;
+    const scale = Math.min(rect.width / imageWidth, rect.height / imageHeight);
+    const width = imageWidth * scale;
+    const height = imageHeight * scale;
+    const left = rect.left + (rect.width - width) / 2;
+    const top = rect.top + (rect.height - height) / 2;
+    const u = (event.clientX - left) / width;
+    const v = (event.clientY - top) / height;
+    if (u < 0 || u > 1 || v < 0 || v > 1) return null;
+    const windowRect = simulationWindow.getBoundingClientRect();
+    return {u, v, x: event.clientX - windowRect.left, y: event.clientY - windowRect.top};
+}
+
+function sceneWorldPosition(u: number, v: number, asset: string): number[] | null {
+    if (!previewCamera) return null;
+    const {azimuth, elevation, distance, lookat} = previewCamera;
+    const az = azimuth * Math.PI / 180;
+    const el = elevation * Math.PI / 180;
+    const camera = [
+        lookat[0] + distance * Math.cos(el) * Math.cos(az),
+        lookat[1] - distance * Math.cos(el) * Math.sin(az),
+        lookat[2] - distance * Math.sin(el),
+    ];
+    const normalize = (vector: number[]) => {
+        const length = Math.hypot(...vector);
+        return vector.map((value) => value / length);
+    };
+    const cross = (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const forward = normalize(lookat.map((value, index) => value - camera[index]));
+    const right = normalize(cross(forward, [0, 0, 1]));
+    const up = cross(right, forward);
+    const halfHeight = Math.tan(45 * Math.PI / 360);
+    const halfWidth = (simulationImage.naturalWidth / simulationImage.naturalHeight) * halfHeight;
+    const ray = normalize(forward.map((value, index) =>
+        value + right[index] * (2 * u - 1) * halfWidth + up[index] * (1 - 2 * v) * halfHeight,
+    ));
+    if (Math.abs(ray[2]) < 1e-6) return null;
+    const distanceToTable = -camera[2] / ray[2];
+    if (distanceToTable <= 0) return null;
+    const x = camera[0] + ray[0] * distanceToTable;
+    const y = camera[1] + ray[1] * distanceToTable;
+    if (Math.abs(x) > 1 || Math.abs(y) > 1) return null;
+    const z = asset === "hammer" ? 0.08 : 0.04;
+    return [Number(x.toFixed(3)), Number(y.toFixed(3)), z];
+}
+
+function updateSceneDropPreview(event: DragEvent): void {
+    const asset = draggedSceneAsset;
+    const point = sceneImagePoint(event);
+    if (!asset || !point || !editorPreviewActive) {
+        sceneDropPreview.hidden = true;
+        return;
+    }
+    const position = sceneWorldPosition(point.u, point.v, asset);
+    sceneDropPreview.hidden = false;
+    sceneDropPreview.style.left = `${point.x}px`;
+    sceneDropPreview.style.top = `${point.y}px`;
+    sceneDropPreview.classList.toggle("invalid", !position);
+    sceneDropShape.textContent = {box: "▣", sphere: "●", cylinder: "▯", hammer: "⚒"}[asset] ?? "▣";
+    sceneDropLabel.textContent = position
+        ? `${asset} · x ${position[0]}, y ${position[1]} · release to place`
+        : "Move over the table to place";
+}
+
 function dropSceneAsset(event: DragEvent): void {
     event.preventDefault();
+    sceneDropPreview.hidden = true;
     const asset = event.dataTransfer?.getData("application/x-mujoco-asset");
-    if (!asset || !["box", "sphere", "cylinder", "hammer"].includes(asset)) return;
-    const rect = simulationImage.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width - 0.5) * 0.35;
-    const y = (0.5 - (event.clientY - rect.top) / rect.height) * 0.35;
-    addSceneAsset(asset, [Number(x.toFixed(3)), Number(y.toFixed(3)), 0.04]);
+    if (!asset || !["box", "sphere", "cylinder", "hammer"].includes(asset) || !editorPreviewActive) return;
+    const point = sceneImagePoint(event);
+    const position = point && sceneWorldPosition(point.u, point.v, asset);
+    if (!position) {
+        setStatus("Choose a point on the table to place the asset", "idle");
+        return;
+    }
+    addSceneAsset(asset, position);
     if (editorPreviewActive && socket) {
         const previous = socket;
         socket = null;
@@ -1694,7 +1785,11 @@ simulationWindow.addEventListener("dragover", (event) => {
     if (event.dataTransfer?.types.includes("application/x-mujoco-asset")) {
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
+        updateSceneDropPreview(event);
     }
+});
+simulationWindow.addEventListener("dragleave", (event) => {
+    if (!simulationWindow.contains(event.relatedTarget as Node | null)) sceneDropPreview.hidden = true;
 });
 simulationWindow.addEventListener("drop", dropSceneAsset);
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});

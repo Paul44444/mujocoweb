@@ -554,6 +554,51 @@ h1 {
 
 .live-asset-bar small { color: #71717a; white-space: nowrap; }
 
+.scene-drop-preview {
+    position: absolute;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: min(300px, 80%);
+    padding: 8px 11px;
+    border: 1px solid #a3e635;
+    border-radius: 9px;
+    background: rgba(42, 64, 9, 0.82);
+    box-shadow: 0 0 0 2px rgba(163, 230, 53, 0.2), 0 8px 22px rgba(0, 0, 0, 0.4);
+    color: #f7fee7;
+    font-size: 0.75rem;
+    pointer-events: none;
+    transform: translate(-50%, -110%);
+    white-space: nowrap;
+}
+
+.scene-drop-preview[hidden] { display: none; }
+
+.scene-drop-preview::after {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    border: 2px solid #a3e635;
+    border-radius: 50%;
+    background: rgba(163, 230, 53, 0.45);
+    content: "";
+    transform: translate(-50%, 2px);
+}
+
+.scene-drop-preview.invalid {
+    border-color: #fb7185;
+    background: rgba(75, 20, 32, 0.85);
+}
+
+.scene-drop-preview.invalid::after { border-color: #fb7185; }
+
+.scene-drop-shape { font-size: 1.25rem; line-height: 1; }
+
+#sceneDropLabel { overflow: hidden; text-overflow: ellipsis; }
+
 @media (min-width: 1400px) {
     .simulation-window {
         min-height: min(72vh, 820px);
