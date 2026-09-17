@@ -692,6 +692,8 @@ let isPaused = false;
 let editorPreviewActive = false;
 let draggedSceneAsset: string | null = null;
 let previewCamera: {azimuth: number; elevation: number; distance: number; lookat: number[]} | null = null;
+type RenderCamera = {position: number[]; forward: number[]; up: number[]; near: number; top: number; bottom: number; center: number};
+let renderCamera: RenderCamera | null = null;
 let selectedSceneAsset = -1;
 let gizmoMode: "move" | "rotate" = "move";
 let gizmoDrag: {pointerId: number; axis: number; startX: number; startY: number; position: number[]; rotation: number[]; direction: number[]} | null = null;
@@ -1397,30 +1399,31 @@ function handleSimulationClick(event: MouseEvent): void {
 }
 
 function projectScenePoint(position: number[]): {x: number; y: number} | null {
-    if (!previewCamera || !simulationImage.naturalWidth || !simulationImage.naturalHeight) return null;
-    const {azimuth, elevation, distance, lookat} = previewCamera;
-    const az = azimuth * Math.PI / 180;
-    const el = elevation * Math.PI / 180;
-    const camera = [lookat[0] + distance * Math.cos(el) * Math.cos(az), lookat[1] - distance * Math.cos(el) * Math.sin(az), lookat[2] - distance * Math.sin(el)];
-    const normalize = (v: number[]) => v.map((value) => value / Math.hypot(...v));
-    const cross = (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-    const forward = normalize(lookat.map((value, i) => value - camera[i]));
-    const right = normalize(cross(forward, [0, 0, 1]));
-    const up = cross(right, forward);
-    const relative = position.map((value, i) => value - camera[i]);
+    if (!renderCamera || !simulationImage.naturalWidth || !simulationImage.naturalHeight) return null;
+    const camera = renderCamera;
+    const right = renderCameraRight(camera);
+    const relative = position.map((value, i) => value - camera.position[i]);
     const dot = (a: number[], b: number[]) => a.reduce((sum, value, i) => sum + value * b[i], 0);
-    const depth = dot(relative, forward);
+    const depth = dot(relative, camera.forward);
     if (depth <= 0) return null;
-    const halfHeight = Math.tan(45 * Math.PI / 360);
     const aspect = simulationImage.naturalWidth / simulationImage.naturalHeight;
-    const u = (dot(relative, right) / depth / (aspect * halfHeight) + 1) / 2;
-    const v = (1 - dot(relative, up) / depth / halfHeight) / 2;
+    const halfWidth = aspect * (camera.top - camera.bottom) / 2;
+    const u = (dot(relative, right) * camera.near / depth - camera.center) / (2 * halfWidth) + 0.5;
+    const v = 1 - (dot(relative, camera.up) * camera.near / depth - camera.bottom) / (camera.top - camera.bottom);
     const rect = simulationImage.getBoundingClientRect();
     const scale = Math.min(rect.width / simulationImage.naturalWidth, rect.height / simulationImage.naturalHeight);
     const width = simulationImage.naturalWidth * scale;
     const height = simulationImage.naturalHeight * scale;
     const windowRect = simulationWindow.getBoundingClientRect();
     return {x: rect.left + (rect.width - width) / 2 + u * width - windowRect.left, y: rect.top + (rect.height - height) / 2 + v * height - windowRect.top};
+}
+
+function renderCameraRight(camera: RenderCamera): number[] {
+    const [fx, fy, fz] = camera.forward;
+    const [ux, uy, uz] = camera.up;
+    const right = [fy * uz - fz * uy, fz * ux - fx * uz, fx * uy - fy * ux];
+    const length = Math.hypot(...right);
+    return right.map((value) => value / length);
 }
 
 function renderSceneGizmo(): void {
@@ -1603,6 +1606,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false): vo
     const connection = new WebSocket(websocketUrl.toString());
     editorPreviewActive = editorPreview;
     previewCamera = null;
+    renderCamera = null;
     sceneDropPreview.hidden = true;
     socket = connection;
     let connectionOpened = false;
@@ -1676,7 +1680,11 @@ function handleTextMessage(message: string): void {
         const data = JSON.parse(message);
 
         if (data.type === "frame_metadata") {
-            if (data.editor_preview && data.camera) { previewCamera = data.camera; renderSceneGizmo(); }
+            if (data.editor_preview) {
+                if (data.camera) previewCamera = data.camera;
+                if (data.render_camera) renderCamera = data.render_camera;
+                renderSceneGizmo();
+            }
             episodeValue.textContent = String(data.episode ?? "—");
             stepValue.textContent = String(data.step ?? "—");
 
@@ -1793,35 +1801,20 @@ function sceneImagePoint(event: DragEvent): {u: number; v: number; x: number; y:
 }
 
 function sceneWorldPosition(u: number, v: number, asset: string): number[] | null {
-    if (!previewCamera) return null;
-    const {azimuth, elevation, distance, lookat} = previewCamera;
-    const az = azimuth * Math.PI / 180;
-    const el = elevation * Math.PI / 180;
-    const camera = [
-        lookat[0] + distance * Math.cos(el) * Math.cos(az),
-        lookat[1] - distance * Math.cos(el) * Math.sin(az),
-        lookat[2] - distance * Math.sin(el),
-    ];
-    const normalize = (vector: number[]) => {
-        const length = Math.hypot(...vector);
-        return vector.map((value) => value / length);
-    };
-    const cross = (a: number[], b: number[]) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-    const forward = normalize(lookat.map((value, index) => value - camera[index]));
-    const right = normalize(cross(forward, [0, 0, 1]));
-    const up = cross(right, forward);
-    const halfHeight = Math.tan(45 * Math.PI / 360);
-    const halfWidth = (simulationImage.naturalWidth / simulationImage.naturalHeight) * halfHeight;
-    const ray = normalize(forward.map((value, index) =>
-        value + right[index] * (2 * u - 1) * halfWidth + up[index] * (1 - 2 * v) * halfHeight,
-    ));
+    if (!renderCamera || !simulationImage.naturalWidth || !simulationImage.naturalHeight) return null;
+    const camera = renderCamera;
+    const right = renderCameraRight(camera);
+    const halfWidth = (simulationImage.naturalWidth / simulationImage.naturalHeight) * (camera.top - camera.bottom) / 2;
+    const imageX = camera.center + (2 * u - 1) * halfWidth;
+    const imageY = camera.bottom + (1 - v) * (camera.top - camera.bottom);
+    const ray = camera.forward.map((value, index) => value * camera.near + right[index] * imageX + camera.up[index] * imageY);
     if (Math.abs(ray[2]) < 1e-6) return null;
-    const distanceToTable = -camera[2] / ray[2];
-    if (distanceToTable <= 0) return null;
-    const x = camera[0] + ray[0] * distanceToTable;
-    const y = camera[1] + ray[1] * distanceToTable;
-    if (Math.abs(x) > 1 || Math.abs(y) > 1) return null;
     const z = asset === "hammer" ? 0.08 : 0.04;
+    const distanceToTable = (z - camera.position[2]) / ray[2];
+    if (distanceToTable <= 0) return null;
+    const x = camera.position[0] + ray[0] * distanceToTable;
+    const y = camera.position[1] + ray[1] * distanceToTable;
+    if (Math.abs(x) > 1 || Math.abs(y) > 1) return null;
     return [Number(x.toFixed(3)), Number(y.toFixed(3)), z];
 }
 
