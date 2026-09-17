@@ -1593,7 +1593,10 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
     startButton.disabled = true;
 
     const websocketUrl = backendWebSocketUrl("/ws/simulation");
-    websocketUrl.searchParams.set("task", editorPreview ? "relocate" : selectedTaskId);
+    // The scene editor currently builds XML from DAPG_relocate.xml. A run
+    // launched from that editor must therefore use the matching Relocate task,
+    // even if the Experiment setup was previously set to another task.
+    websocketUrl.searchParams.set("task", editorPreview || runEditedScene ? "relocate" : selectedTaskId);
     if (editorPreview || runEditedScene) {
         // The editor preview and a run started from it share the same asset list.
         // Only the former remains in static editing mode.
