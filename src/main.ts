@@ -674,6 +674,7 @@ let editorLogsLoading = false;
 let currentImageUrl: string | null = null;
 let lastFocusedElement: HTMLElement | null = null;
 let isPaused = false;
+let editorPreviewActive = false;
 const activePointers = new Map<number, {x: number; y: number}>();
 let cameraDrag: {pointerId: number; x: number; y: number} | null = null;
 let pinchDistance: number | null = null;
@@ -1393,12 +1394,18 @@ function updatePlaybackButton(): void {
     const label = startButton.querySelector<HTMLElement>(".playback-label")!;
     const connected = socket?.readyState === WebSocket.OPEN;
     icon.className = `playback-icon ${connected && !isPaused ? "pause-icon" : "play-icon"}`;
-    label.textContent = connected ? (isPaused ? "Resume" : "Pause") : "Start simulation";
+    label.textContent = connected && !editorPreviewActive ? (isPaused ? "Resume" : "Pause") : "Start simulation";
     startButton.setAttribute("aria-label", label.textContent);
 }
 
 async function handlePlaybackButton(): Promise<void> {
     if (socket?.readyState === WebSocket.OPEN) {
+        if (editorPreviewActive) {
+            editorPreviewActive = false;
+            socket.close();
+            window.setTimeout(() => connectToSimulation(), 150);
+            return;
+        }
         togglePause();
     } else {
         const version = configurationVersion;
@@ -1498,6 +1505,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false): vo
 
     console.log("Connecting to WebSocket:", websocketUrl);
     const connection = new WebSocket(websocketUrl.toString());
+    editorPreviewActive = editorPreview;
     socket = connection;
     let connectionOpened = false;
 
