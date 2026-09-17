@@ -1498,7 +1498,7 @@ async function handlePlaybackButton(): Promise<void> {
         if (editorPreviewActive) {
             editorPreviewActive = false;
             socket.close();
-            window.setTimeout(() => connectToSimulation(), 150);
+            window.setTimeout(() => connectToSimulation(false, false, true), 150);
             return;
         }
         togglePause();
@@ -1580,7 +1580,7 @@ function zoomCamera(event: WheelEvent): void {
     sendSimulationCommand({type: "camera_zoom", delta: Math.sign(event.deltaY)});
 }
 
-function connectToSimulation(fallbackAttempt = false, editorPreview = false): void {
+function connectToSimulation(fallbackAttempt = false, editorPreview = false, runEditedScene = false): void {
     if (
         socket &&
         (socket.readyState === WebSocket.OPEN ||
@@ -1594,9 +1594,13 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false): vo
 
     const websocketUrl = backendWebSocketUrl("/ws/simulation");
     websocketUrl.searchParams.set("task", editorPreview ? "relocate" : selectedTaskId);
+    if (editorPreview || runEditedScene) {
+        // The editor preview and a run started from it share the same asset list.
+        // Only the former remains in static editing mode.
+        websocketUrl.searchParams.set("scene", JSON.stringify(sceneAssets));
+    }
     if (editorPreview) {
         websocketUrl.searchParams.set("editor", "1");
-        websocketUrl.searchParams.set("scene", JSON.stringify(sceneAssets));
         if (previewCamera) websocketUrl.searchParams.set("camera", JSON.stringify(previewCamera));
     } else if (generatedObject && selectedTaskId === "relocate") {
         websocketUrl.searchParams.set("object", JSON.stringify(generatedObject));
@@ -1648,7 +1652,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false): vo
         if (!connectionOpened && !fallbackAttempt && backendUrl !== RENDER_BACKEND_URL) {
             backendUrl = RENDER_BACKEND_URL;
             setStatus("GPU backend unavailable — connecting to Render…", "connecting");
-            connectToSimulation(true, editorPreview);
+            connectToSimulation(true, editorPreview, runEditedScene);
             return;
         }
 
