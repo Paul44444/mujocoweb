@@ -388,6 +388,31 @@ h1 {
     gap: 14px;
 }
 
+.scene-toolbar {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+}
+
+.scene-toolbar-select,
+.scene-toolbar-name {
+    height: 39px;
+    border: 1px solid #3f3f46;
+    border-radius: 9px;
+    outline: none;
+    color: #e4e4e7;
+    background: rgba(24, 24, 27, 0.92);
+    font: inherit;
+    font-size: 0.78rem;
+}
+
+.scene-toolbar-select { width: 145px; padding: 0 28px 0 9px; }
+.scene-toolbar-name { width: 145px; padding: 0 9px; }
+.scene-toolbar-select:focus,
+.scene-toolbar-name:focus { border-color: rgba(118, 185, 0, 0.7); }
+.scene-toolbar-button { padding: 9px 10px; font-size: 0.78rem; }
+
 .setup-button {
     display: inline-flex;
     align-items: center;
@@ -1238,17 +1263,6 @@ body.panel-open {
 .scene-account-row button { flex: 0 0 auto; white-space: nowrap; }
 .scene-account-panel .generator-message { grid-column: 1 / -1; margin: 0; }
 
-.scene-storage-controls {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-    padding-top: 13px;
-    border-top: 1px solid rgba(161, 161, 170, 0.2);
-}
-
-.scene-storage-message:empty { display: none; }
-
 .scene-draft {
     min-height: 82px;
     padding: 12px;
@@ -1817,6 +1831,10 @@ body.panel-open {
         flex-wrap: wrap;
     }
 
+    .scene-toolbar { flex: 1 1 100%; order: 3; }
+    .scene-toolbar-select,
+    .scene-toolbar-name { flex: 1 1 150px; width: auto; }
+
     .scene-account-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .scene-account-copy { grid-column: 1 / -1; }
 }
@@ -1942,7 +1960,7 @@ body.panel-open {
     .scene-account-panel .generator-message { grid-column: 1; }
     .scene-account-row { flex-wrap: wrap; }
     .scene-account-row button { flex: 1 1 140px; }
-    .scene-storage-controls { grid-template-columns: minmax(0, 1fr); }
+    .scene-toolbar { width: 100%; flex-wrap: wrap; }
 
     .simulation-window {
         min-height: 300px;

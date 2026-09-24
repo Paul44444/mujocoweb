@@ -133,6 +133,12 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <button id="sceneAccountButton" class="setup-button" type="button" aria-controls="sceneAccountPanel" aria-expanded="false">
               <span aria-hidden="true">◎</span><span id="sceneAccountLabel">User: Guest</span>
             </button>
+            <div class="scene-toolbar" aria-label="Scene storage">
+              <select id="sceneSelect" class="scene-toolbar-select" aria-label="Scene to load"><option value="">Loading scenes…</option></select>
+              <button id="sceneLoadButton" class="setup-button scene-toolbar-button" type="button">Load</button>
+              <input id="sceneNameInput" class="scene-toolbar-name" value="DAPG Relocate Start" maxlength="48" aria-label="Scene name for saving" />
+              <button id="sceneSaveButton" class="setup-button scene-toolbar-button" type="button">Save</button>
+            </div>
             <button id="setupButton" class="setup-button" type="button" aria-haspopup="dialog" aria-controls="setupPanel">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <circle cx="12" cy="12" r="3"/>
@@ -153,11 +159,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <div class="scene-account-field"><label for="sceneUserSelect">Existing users</label><div class="scene-account-row"><select id="sceneUserSelect" class="setup-select"><option value="">Loading users…</option></select><button id="sceneExistingUserButton" class="secondary-button" type="button">Open user</button></div></div>
           <div class="scene-account-field"><label for="sceneUserInput">Create user or enter name</label><div class="scene-account-row"><input id="sceneUserInput" class="setup-input" value="Guest" maxlength="32" autocomplete="username" /><button id="sceneUserButton" class="secondary-button" type="button">Create / open user</button></div></div>
           <p id="sceneAccountMessage" class="generator-message" aria-live="polite"></p>
-          <div class="scene-storage-controls">
-            <div class="scene-account-field"><label for="sceneSelect">Load scene</label><div class="scene-account-row"><select id="sceneSelect" class="setup-select"><option value="">Loading scenes…</option></select><button id="sceneLoadButton" class="secondary-button" type="button">Load scene</button></div></div>
-            <div class="scene-account-field"><label for="sceneNameInput">Save current scene as</label><div class="scene-account-row"><input id="sceneNameInput" class="setup-input" value="DAPG Relocate Start" maxlength="48" /><button id="sceneSaveButton" class="secondary-button" type="button">Save scene</button></div></div>
-          </div>
-          <p id="sceneMessage" class="generator-message scene-storage-message" aria-live="polite"></p>
+          <p id="sceneMessage" class="generator-message" aria-live="polite"></p>
         </div>
 
         <div class="simulation-window">
@@ -888,6 +890,11 @@ function reconnectSceneEditor(): void {
     window.setTimeout(() => connectToSimulation(false, true), 180);
 }
 
+function flashSceneButton(button: HTMLButtonElement, message: string, fallback: string): void {
+    button.textContent = message;
+    window.setTimeout(() => { button.textContent = fallback; }, 1600);
+}
+
 async function loadScene(): Promise<void> {
     const user = sceneUser();
     const name = sceneSelect.value;
@@ -903,8 +910,10 @@ async function loadScene(): Promise<void> {
         renderSceneGizmo();
         reconnectSceneEditor();
         sceneMessage.textContent = `${result.name} loaded for ${user}.`;
+        flashSceneButton(sceneLoadButton, "Loaded ✓", "Load");
     } catch (error) {
         sceneMessage.textContent = error instanceof Error ? error.message : "Could not load scene.";
+        flashSceneButton(sceneLoadButton, "Failed", "Load");
     } finally {
         sceneLoadButton.disabled = false;
     }
@@ -914,14 +923,25 @@ async function saveScene(): Promise<void> {
     const user = sceneUser();
     const name = sceneNameInput.value.trim();
     if (!user) return;
-    if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{0,47}$/.test(name)) { sceneMessage.textContent = "Enter a valid scene name."; return; }
+    if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{0,47}$/.test(name)) {
+        sceneMessage.textContent = "Enter a valid scene name.";
+        flashSceneButton(sceneSaveButton, "Invalid name", "Save");
+        return;
+    }
+    sceneSaveButton.disabled = true;
     sceneMessage.textContent = "Saving scene on backend…";
     try {
         await sceneRequest(`/users/${encodeURIComponent(user)}/scenes/${encodeURIComponent(name)}`, {method: "PUT", body: JSON.stringify({name, assets: sceneAssets})});
         await loadSceneList(false);
         sceneSelect.value = name;
         sceneMessage.textContent = `${name} saved for ${user}.`;
-    } catch (error) { sceneMessage.textContent = error instanceof Error ? error.message : "Could not save scene."; }
+        flashSceneButton(sceneSaveButton, "Saved ✓", "Save");
+    } catch (error) {
+        sceneMessage.textContent = error instanceof Error ? error.message : "Could not save scene.";
+        flashSceneButton(sceneSaveButton, "Failed", "Save");
+    } finally {
+        sceneSaveButton.disabled = false;
+    }
 }
 renderSceneDraft();
 
@@ -2088,6 +2108,11 @@ sceneUserInput.addEventListener("keydown", (event) => {
 sceneLoadButton.addEventListener("click", () => void loadScene());
 sceneSelect.addEventListener("dblclick", () => void loadScene());
 sceneSaveButton.addEventListener("click", () => void saveScene());
+sceneNameInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    void saveScene();
+});
 document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach((button) => {
     button.addEventListener("click", () => {
         objectPrompt.value = button.dataset.prompt ?? "";
