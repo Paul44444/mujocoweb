@@ -1192,6 +1192,22 @@ body.panel-open {
 }
 
 .scene-actions .setup-input { flex: 1 1 180px; }
+.scene-actions .setup-select { flex: 1 1 180px; min-width: 0; }
+
+.scene-account-note {
+    display: grid;
+    gap: 3px;
+    margin: 12px 0 16px;
+    padding: 10px 12px;
+    border: 1px solid rgba(250, 204, 21, 0.3);
+    border-radius: 8px;
+    background: rgba(113, 63, 18, 0.18);
+    color: #d4d4d8;
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+.scene-account-note strong { color: #fde68a; }
 
 .scene-draft {
     min-height: 82px;

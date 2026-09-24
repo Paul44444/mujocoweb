@@ -12,6 +12,7 @@ scoped unless the request or an observed dependency requires expanding it.
 | Browser scene-editor layout and gizmo styling | `src/style.css` |
 | WebSocket API and simulation lifecycle | `../PycharmProjects/dapg/server.py` |
 | MuJoCo setup, rendering, camera, dynamic scene XML | `../PycharmProjects/dapg/muj1.py` |
+| Name-only user scene storage API | `../PycharmProjects/dapg/editor_api.py` |
 
 ## MuJoCo Relocate task files
 
@@ -42,6 +43,8 @@ src/main.ts (scene editor / simulation panel)
 - `frame_metadata.render_camera` is the authoritative projection data for
   placement, selection, and gizmo positioning. Do not replace it with an
   approximate azimuth/elevation projection.
+- Scene accounts are currently name-only test namespaces under
+  `/api/editor/users/{user}/scenes`; they intentionally require no password.
 
 ## Out of scope by default
 

@@ -481,6 +481,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <details class="advanced-settings scene-editor" open>
           <summary>Backend scene editor</summary>
           <p>Assets and saved scenes live on the MuJoCo backend. Choose an asset to add it to the scene draft.</p>
+          <div class="scene-account-note"><strong>Test accounts</strong><span>Enter any user name. No password is required in this version, so scenes are not private yet.</span></div>
+          <label class="field-label" for="sceneUserInput">User name</label>
+          <div class="scene-actions"><input id="sceneUserInput" class="setup-input" value="Guest" maxlength="32" autocomplete="username" /><button id="sceneUserButton" class="secondary-button" type="button">Use user</button></div>
+          <label class="field-label" for="sceneSelect">Saved scenes</label>
+          <div class="scene-actions"><select id="sceneSelect" class="setup-select"><option value="">Loading scenes…</option></select><button id="sceneLoadButton" class="secondary-button" type="button">Load scene</button></div>
           <div id="sceneAssetPalette" class="scene-asset-palette">
             <button type="button" data-scene-asset="box">▣ Cube</button>
             <button type="button" data-scene-asset="sphere">● Sphere</button>
@@ -644,6 +649,10 @@ const generatedObjectSummary = document.querySelector<HTMLParagraphElement>("#ge
 const generatedObjectParts = document.querySelector<HTMLElement>("#generatedObjectParts")!;
 const sceneNameInput = document.querySelector<HTMLInputElement>("#sceneNameInput")!;
 const sceneSaveButton = document.querySelector<HTMLButtonElement>("#sceneSaveButton")!;
+const sceneUserInput = document.querySelector<HTMLInputElement>("#sceneUserInput")!;
+const sceneUserButton = document.querySelector<HTMLButtonElement>("#sceneUserButton")!;
+const sceneSelect = document.querySelector<HTMLSelectElement>("#sceneSelect")!;
+const sceneLoadButton = document.querySelector<HTMLButtonElement>("#sceneLoadButton")!;
 const sceneGizmo = document.querySelector<HTMLElement>("#sceneGizmo")!;
 const sceneGizmoAxes = document.querySelector<SVGSVGElement>("#sceneGizmoAxes")!;
 const sceneGizmoName = document.querySelector<HTMLElement>("#sceneGizmoName")!;
@@ -762,6 +771,7 @@ type GeneratedObject = {
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
 const sceneAssets: {id: string; asset: string; position: number[]; rotation: number[]; scale: number[]}[] = [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03]}];
+sceneUserInput.value = localStorage.getItem("mujocoweb-scene-user") || "Guest";
 
 function renderSceneDraft(): void {
     sceneDraft.textContent = sceneAssets.map((item) => `${item.asset} · position ${item.position.join(", ")} · rotation ${item.rotation.join(", ")}° · scale ${item.scale.join(", ")}`).join("\n");
@@ -773,12 +783,93 @@ function addSceneAsset(asset: string, position = [0.05 * (sceneAssets.length + 1
     renderSceneDraft();
 }
 
+function sceneUser(): string | null {
+    const user = sceneUserInput.value.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$/.test(user)) {
+        sceneMessage.textContent = "Use 1-32 letters, numbers, spaces, _ or - for the user name.";
+        return null;
+    }
+    localStorage.setItem("mujocoweb-scene-user", user);
+    return user;
+}
+
+async function sceneRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+    await refreshPublishedBackendUrl();
+    const response = await fetch(backendHttpUrl(`/api/editor${path}`), {
+        ...options,
+        headers: options.body ? {"Content-Type": "application/json"} : {},
+    });
+    if (!response.ok) {
+        let message = `Scene request failed (${response.status}).`;
+        try {
+            const error = await response.json() as {detail?: string};
+            if (error.detail) message = error.detail;
+        } catch { /* Keep the HTTP status message. */ }
+        throw new Error(message);
+    }
+    return response.json() as Promise<T>;
+}
+
+async function loadSceneList(announce = true): Promise<void> {
+    const user = sceneUser();
+    if (!user) return;
+    sceneUserButton.disabled = true;
+    if (announce) sceneMessage.textContent = `Opening ${user}'s test account…`;
+    try {
+        const result = await sceneRequest<{scenes: string[]}>(`/users/${encodeURIComponent(user)}/scenes`);
+        sceneSelect.replaceChildren(...result.scenes.map((name) => new Option(name, name)));
+        const preferred = result.scenes.includes(sceneNameInput.value) ? sceneNameInput.value : result.scenes[0];
+        if (preferred) sceneSelect.value = preferred;
+        if (announce) sceneMessage.textContent = `${user}'s scenes are ready. No password is required in this test version.`;
+    } catch (error) {
+        sceneSelect.replaceChildren(new Option("Could not load scenes", ""));
+        sceneMessage.textContent = error instanceof Error ? error.message : "Could not load scenes.";
+    } finally {
+        sceneUserButton.disabled = false;
+    }
+}
+
+function reconnectSceneEditor(): void {
+    const previous = socket;
+    socket = null;
+    previous?.close();
+    editorPreviewActive = false;
+    window.setTimeout(() => connectToSimulation(false, true), 180);
+}
+
+async function loadScene(): Promise<void> {
+    const user = sceneUser();
+    const name = sceneSelect.value;
+    if (!user || !name) { sceneMessage.textContent = "Choose a saved scene first."; return; }
+    sceneLoadButton.disabled = true;
+    sceneMessage.textContent = `Loading ${name}…`;
+    try {
+        const result = await sceneRequest<{name: string; assets: typeof sceneAssets}>(`/users/${encodeURIComponent(user)}/scenes/${encodeURIComponent(name)}`);
+        sceneAssets.splice(0, sceneAssets.length, ...result.assets);
+        selectedSceneAsset = -1;
+        sceneNameInput.value = result.name;
+        renderSceneDraft();
+        renderSceneGizmo();
+        reconnectSceneEditor();
+        sceneMessage.textContent = `${result.name} loaded for ${user}.`;
+    } catch (error) {
+        sceneMessage.textContent = error instanceof Error ? error.message : "Could not load scene.";
+    } finally {
+        sceneLoadButton.disabled = false;
+    }
+}
+
 async function saveScene(): Promise<void> {
-    if (!editorToken) { sceneMessage.textContent = "Unlock the Code editor once with your password to save backend scenes."; return; }
+    const user = sceneUser();
+    const name = sceneNameInput.value.trim();
+    if (!user) return;
+    if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{0,47}$/.test(name)) { sceneMessage.textContent = "Enter a valid scene name."; return; }
     sceneMessage.textContent = "Saving scene on backend…";
     try {
-        await editorRequest(`/scenes/${encodeURIComponent(sceneNameInput.value)}`, {method: "PUT", body: JSON.stringify({name: sceneNameInput.value, assets: sceneAssets})});
-        sceneMessage.textContent = "Scene saved on backend.";
+        await sceneRequest(`/users/${encodeURIComponent(user)}/scenes/${encodeURIComponent(name)}`, {method: "PUT", body: JSON.stringify({name, assets: sceneAssets})});
+        await loadSceneList(false);
+        sceneSelect.value = name;
+        sceneMessage.textContent = `${name} saved for ${user}.`;
     } catch (error) { sceneMessage.textContent = error instanceof Error ? error.message : "Could not save scene."; }
 }
 renderSceneDraft();
@@ -1927,6 +2018,14 @@ setupOverlay.addEventListener("click", closeSetupPanel);
 resetSetupButton.addEventListener("click", resetConfiguration);
 generateObjectButton.addEventListener("click", generateObject);
 document.querySelectorAll<HTMLButtonElement>("[data-scene-asset]").forEach((button) => button.addEventListener("click", () => addSceneAsset(button.dataset.sceneAsset ?? "box")));
+sceneUserButton.addEventListener("click", () => void loadSceneList());
+sceneUserInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    void loadSceneList();
+});
+sceneLoadButton.addEventListener("click", () => void loadScene());
+sceneSelect.addEventListener("dblclick", () => void loadScene());
 sceneSaveButton.addEventListener("click", () => void saveScene());
 document.querySelectorAll<HTMLButtonElement>("[data-prompt]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1970,6 +2069,7 @@ window.addEventListener("beforeunload", () => {
 window.addEventListener("load", () => {
     void (async () => {
         await refreshPublishedBackendUrl();
+        await loadSceneList(false);
         if (!simulationImage.classList.contains("visible") && !socket) connectToSimulation(false, true);
     })();
 });
