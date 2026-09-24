@@ -483,7 +483,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <p>Assets and saved scenes live on the MuJoCo backend. Choose an asset to add it to the scene draft.</p>
           <div class="scene-account-note"><strong>Test accounts</strong><span>Enter any user name. No password is required in this version, so scenes are not private yet.</span></div>
           <label class="field-label" for="sceneUserInput">User name</label>
-          <div class="scene-actions"><input id="sceneUserInput" class="setup-input" value="Guest" maxlength="32" autocomplete="username" /><button id="sceneUserButton" class="secondary-button" type="button">Use user</button></div>
+          <div class="scene-actions"><input id="sceneUserInput" class="setup-input" value="Guest" maxlength="32" autocomplete="username" /><button id="sceneUserButton" class="secondary-button" type="button">Create / open user</button></div>
           <label class="field-label" for="sceneSelect">Saved scenes</label>
           <div class="scene-actions"><select id="sceneSelect" class="setup-select"><option value="">Loading scenes…</option></select><button id="sceneLoadButton" class="secondary-button" type="button">Load scene</button></div>
           <div id="sceneAssetPalette" class="scene-asset-palette">
