@@ -482,7 +482,9 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <summary>Backend scene editor</summary>
           <p>Assets and saved scenes live on the MuJoCo backend. Choose an asset to add it to the scene draft.</p>
           <div class="scene-account-note"><strong>Test accounts</strong><span>Enter any user name. No password is required in this version, so scenes are not private yet.</span></div>
-          <label class="field-label" for="sceneUserInput">User name</label>
+          <label class="field-label" for="sceneUserSelect">Existing users</label>
+          <div class="scene-actions"><select id="sceneUserSelect" class="setup-select"><option value="">Loading users…</option></select><button id="sceneExistingUserButton" class="secondary-button" type="button">Open user</button></div>
+          <label class="field-label" for="sceneUserInput">Create user or enter name</label>
           <div class="scene-actions"><input id="sceneUserInput" class="setup-input" value="Guest" maxlength="32" autocomplete="username" /><button id="sceneUserButton" class="secondary-button" type="button">Create / open user</button></div>
           <label class="field-label" for="sceneSelect">Saved scenes</label>
           <div class="scene-actions"><select id="sceneSelect" class="setup-select"><option value="">Loading scenes…</option></select><button id="sceneLoadButton" class="secondary-button" type="button">Load scene</button></div>
@@ -651,6 +653,8 @@ const sceneNameInput = document.querySelector<HTMLInputElement>("#sceneNameInput
 const sceneSaveButton = document.querySelector<HTMLButtonElement>("#sceneSaveButton")!;
 const sceneUserInput = document.querySelector<HTMLInputElement>("#sceneUserInput")!;
 const sceneUserButton = document.querySelector<HTMLButtonElement>("#sceneUserButton")!;
+const sceneUserSelect = document.querySelector<HTMLSelectElement>("#sceneUserSelect")!;
+const sceneExistingUserButton = document.querySelector<HTMLButtonElement>("#sceneExistingUserButton")!;
 const sceneSelect = document.querySelector<HTMLSelectElement>("#sceneSelect")!;
 const sceneLoadButton = document.querySelector<HTMLButtonElement>("#sceneLoadButton")!;
 const sceneGizmo = document.querySelector<HTMLElement>("#sceneGizmo")!;
@@ -810,6 +814,28 @@ async function sceneRequest<T>(path: string, options: RequestInit = {}): Promise
     return response.json() as Promise<T>;
 }
 
+async function loadUserList(announce = true): Promise<void> {
+    if (announce) sceneMessage.textContent = "Loading existing test users…";
+    try {
+        const result = await sceneRequest<{users: string[]}>("/users");
+        const options = result.users.length
+            ? result.users.map((user) => new Option(user, user))
+            : [new Option("No users yet", "")];
+        sceneUserSelect.replaceChildren(...options);
+        const current = sceneUserInput.value.trim();
+        const matchingUser = result.users.find((user) => user.toLocaleLowerCase() === current.toLocaleLowerCase());
+        if (matchingUser) sceneUserSelect.value = matchingUser;
+        sceneExistingUserButton.disabled = result.users.length === 0;
+        if (announce) sceneMessage.textContent = result.users.length
+            ? "Choose a user, or create a new name below."
+            : "No users exist yet. Enter a name below to create the first one.";
+    } catch (error) {
+        sceneUserSelect.replaceChildren(new Option("Could not load users", ""));
+        sceneExistingUserButton.disabled = true;
+        if (announce) sceneMessage.textContent = error instanceof Error ? error.message : "Could not load users.";
+    }
+}
+
 async function loadSceneList(announce = true): Promise<void> {
     const user = sceneUser();
     if (!user) return;
@@ -820,6 +846,7 @@ async function loadSceneList(announce = true): Promise<void> {
         sceneSelect.replaceChildren(...result.scenes.map((name) => new Option(name, name)));
         const preferred = result.scenes.includes(sceneNameInput.value) ? sceneNameInput.value : result.scenes[0];
         if (preferred) sceneSelect.value = preferred;
+        await loadUserList(false);
         if (announce) sceneMessage.textContent = `${user}'s scenes are ready. No password is required in this test version.`;
     } catch (error) {
         sceneSelect.replaceChildren(new Option("Could not load scenes", ""));
@@ -2018,6 +2045,11 @@ setupOverlay.addEventListener("click", closeSetupPanel);
 resetSetupButton.addEventListener("click", resetConfiguration);
 generateObjectButton.addEventListener("click", generateObject);
 document.querySelectorAll<HTMLButtonElement>("[data-scene-asset]").forEach((button) => button.addEventListener("click", () => addSceneAsset(button.dataset.sceneAsset ?? "box")));
+sceneExistingUserButton.addEventListener("click", () => {
+    if (!sceneUserSelect.value) return;
+    sceneUserInput.value = sceneUserSelect.value;
+    void loadSceneList();
+});
 sceneUserButton.addEventListener("click", () => void loadSceneList());
 sceneUserInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
