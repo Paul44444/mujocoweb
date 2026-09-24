@@ -130,6 +130,17 @@ h1 {
     padding: 16px;
 }
 
+.workbench:not(.logs-open) .workbench-logs {
+    cursor: pointer;
+}
+
+.workbench:not(.logs-open) .workbench-logs:hover {
+    border-color: rgba(118, 185, 0, 0.48);
+}
+
+.workbench-logs :is(input, textarea, .editor-logs-output) { cursor: text; }
+.workbench-logs :is(button, select, a, label) { cursor: pointer; }
+
 .workbench-logs-header {
     display: flex;
     align-items: flex-start;

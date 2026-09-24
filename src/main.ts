@@ -679,6 +679,7 @@ const editorMessage = document.querySelector<HTMLParagraphElement>("#editorMessa
 const editorDescription = document.querySelector<HTMLParagraphElement>("#editorDescription")!;
 const editorLogsRefreshButton = document.querySelector<HTMLButtonElement>("#editorLogsRefreshButton")!;
 const editorLogsExpandButton = document.querySelector<HTMLButtonElement>("#editorLogsExpandButton")!;
+const editorLogsPanel = document.querySelector<HTMLElement>("#editorLogsPanel")!;
 const editorLogsOutput = document.querySelector<HTMLElement>("#editorLogsOutput")!;
 const editorLogsMessage = document.querySelector<HTMLParagraphElement>("#editorLogsMessage")!;
 
@@ -1315,6 +1316,12 @@ editorSaveButton.addEventListener("click", saveEditorFile);
 editorRestoreButton.addEventListener("click", restoreEditorFile);
 editorLogsRefreshButton.addEventListener("click", () => void refreshEditorLogs());
 editorLogsExpandButton.addEventListener("click", () => setLogsOpen(!workbench.classList.contains("logs-open")));
+editorLogsPanel.addEventListener("click", (event) => {
+    if (workbench.classList.contains("logs-open")) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, textarea, select, a, label, [contenteditable='true'], .editor-logs-output")) return;
+    setLogsOpen(true);
+});
 editorBackButton.addEventListener("click", () => void moveEditorHistory(editorBackHistory, editorForwardHistory));
 editorForwardButton.addEventListener("click", () => void moveEditorHistory(editorForwardHistory, editorBackHistory));
 window.setInterval(() => {
