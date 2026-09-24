@@ -1194,20 +1194,49 @@ body.panel-open {
 .scene-actions .setup-input { flex: 1 1 180px; }
 .scene-actions .setup-select { flex: 1 1 180px; min-width: 0; }
 
-.scene-account-note {
+.scene-account-panel {
     display: grid;
-    gap: 3px;
-    margin: 12px 0 16px;
-    padding: 10px 12px;
-    border: 1px solid rgba(250, 204, 21, 0.3);
-    border-radius: 8px;
-    background: rgba(113, 63, 18, 0.18);
-    color: #d4d4d8;
-    font-size: 0.76rem;
-    line-height: 1.45;
+    grid-template-columns: minmax(180px, 0.8fr) minmax(250px, 1fr) minmax(300px, 1.15fr);
+    align-items: end;
+    gap: 14px;
+    padding: 14px 24px;
+    border-bottom: 1px solid #3f3f46;
+    background: linear-gradient(90deg, rgba(113, 63, 18, 0.2), rgba(24, 24, 27, 0.98));
 }
 
-.scene-account-note strong { color: #fde68a; }
+.scene-account-panel[hidden] { display: none; }
+
+.scene-account-copy,
+.scene-account-field {
+    display: grid;
+    gap: 5px;
+}
+
+.scene-account-copy {
+    align-self: center;
+    color: #d4d4d8;
+    font-size: 0.74rem;
+    line-height: 1.4;
+}
+
+.scene-account-copy strong { color: #fde68a; font-size: 0.82rem; }
+
+.scene-account-field label {
+    color: #a1a1aa;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.scene-account-row {
+    display: flex;
+    gap: 7px;
+}
+
+.scene-account-row .setup-input,
+.scene-account-row .setup-select { min-width: 0; flex: 1 1 auto; }
+.scene-account-row button { flex: 0 0 auto; white-space: nowrap; }
+.scene-account-panel .generator-message { grid-column: 1 / -1; margin: 0; }
 
 .scene-draft {
     min-height: 82px;
@@ -1776,6 +1805,9 @@ body.panel-open {
     .controls {
         flex-wrap: wrap;
     }
+
+    .scene-account-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .scene-account-copy { grid-column: 1 / -1; }
 }
 
 @media (max-width: 700px) {
@@ -1893,6 +1925,12 @@ body.panel-open {
         flex: 1;
         justify-content: center;
     }
+
+    .scene-account-panel { grid-template-columns: minmax(0, 1fr); padding: 14px 16px; }
+    .scene-account-copy,
+    .scene-account-panel .generator-message { grid-column: 1; }
+    .scene-account-row { flex-wrap: wrap; }
+    .scene-account-row button { flex: 1 1 140px; }
 
     .simulation-window {
         min-height: 300px;

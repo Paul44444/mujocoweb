@@ -130,6 +130,9 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
           <div class="controls">
             <span id="statusIndicator" class="status-indicator"></span>
+            <button id="sceneAccountButton" class="setup-button" type="button" aria-controls="sceneAccountPanel" aria-expanded="false">
+              <span aria-hidden="true">◎</span><span id="sceneAccountLabel">User: Guest</span>
+            </button>
             <button id="setupButton" class="setup-button" type="button" aria-haspopup="dialog" aria-controls="setupPanel">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <circle cx="12" cy="12" r="3"/>
@@ -143,6 +146,13 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               <span class="playback-label">Start simulation</span>
             </button>
           </div>
+        </div>
+
+        <div id="sceneAccountPanel" class="scene-account-panel" hidden>
+          <div class="scene-account-copy"><strong>Test accounts</strong><span>No password is required in this version, so scenes are not private yet.</span></div>
+          <div class="scene-account-field"><label for="sceneUserSelect">Existing users</label><div class="scene-account-row"><select id="sceneUserSelect" class="setup-select"><option value="">Loading users…</option></select><button id="sceneExistingUserButton" class="secondary-button" type="button">Open user</button></div></div>
+          <div class="scene-account-field"><label for="sceneUserInput">Create user or enter name</label><div class="scene-account-row"><input id="sceneUserInput" class="setup-input" value="Guest" maxlength="32" autocomplete="username" /><button id="sceneUserButton" class="secondary-button" type="button">Create / open user</button></div></div>
+          <p id="sceneAccountMessage" class="generator-message" aria-live="polite"></p>
         </div>
 
         <div class="simulation-window">
@@ -481,11 +491,6 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <details class="advanced-settings scene-editor" open>
           <summary>Backend scene editor</summary>
           <p>Assets and saved scenes live on the MuJoCo backend. Choose an asset to add it to the scene draft.</p>
-          <div class="scene-account-note"><strong>Test accounts</strong><span>Enter any user name. No password is required in this version, so scenes are not private yet.</span></div>
-          <label class="field-label" for="sceneUserSelect">Existing users</label>
-          <div class="scene-actions"><select id="sceneUserSelect" class="setup-select"><option value="">Loading users…</option></select><button id="sceneExistingUserButton" class="secondary-button" type="button">Open user</button></div>
-          <label class="field-label" for="sceneUserInput">Create user or enter name</label>
-          <div class="scene-actions"><input id="sceneUserInput" class="setup-input" value="Guest" maxlength="32" autocomplete="username" /><button id="sceneUserButton" class="secondary-button" type="button">Create / open user</button></div>
           <label class="field-label" for="sceneSelect">Saved scenes</label>
           <div class="scene-actions"><select id="sceneSelect" class="setup-select"><option value="">Loading scenes…</option></select><button id="sceneLoadButton" class="secondary-button" type="button">Load scene</button></div>
           <div id="sceneAssetPalette" class="scene-asset-palette">
@@ -655,6 +660,10 @@ const sceneUserInput = document.querySelector<HTMLInputElement>("#sceneUserInput
 const sceneUserButton = document.querySelector<HTMLButtonElement>("#sceneUserButton")!;
 const sceneUserSelect = document.querySelector<HTMLSelectElement>("#sceneUserSelect")!;
 const sceneExistingUserButton = document.querySelector<HTMLButtonElement>("#sceneExistingUserButton")!;
+const sceneAccountButton = document.querySelector<HTMLButtonElement>("#sceneAccountButton")!;
+const sceneAccountLabel = document.querySelector<HTMLElement>("#sceneAccountLabel")!;
+const sceneAccountPanel = document.querySelector<HTMLElement>("#sceneAccountPanel")!;
+const sceneAccountMessage = document.querySelector<HTMLParagraphElement>("#sceneAccountMessage")!;
 const sceneSelect = document.querySelector<HTMLSelectElement>("#sceneSelect")!;
 const sceneLoadButton = document.querySelector<HTMLButtonElement>("#sceneLoadButton")!;
 const sceneGizmo = document.querySelector<HTMLElement>("#sceneGizmo")!;
@@ -776,6 +785,16 @@ let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
 const sceneAssets: {id: string; asset: string; position: number[]; rotation: number[]; scale: number[]}[] = [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03]}];
 sceneUserInput.value = localStorage.getItem("mujocoweb-scene-user") || "Guest";
+sceneAccountLabel.textContent = `User: ${sceneUserInput.value}`;
+
+function setSceneAccountMessage(message: string): void {
+    sceneAccountMessage.textContent = message;
+}
+
+function setSceneAccountOpen(open: boolean): void {
+    sceneAccountPanel.hidden = !open;
+    sceneAccountButton.setAttribute("aria-expanded", String(open));
+}
 
 function renderSceneDraft(): void {
     sceneDraft.textContent = sceneAssets.map((item) => `${item.asset} · position ${item.position.join(", ")} · rotation ${item.rotation.join(", ")}° · scale ${item.scale.join(", ")}`).join("\n");
@@ -790,10 +809,13 @@ function addSceneAsset(asset: string, position = [0.05 * (sceneAssets.length + 1
 function sceneUser(): string | null {
     const user = sceneUserInput.value.trim();
     if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$/.test(user)) {
-        sceneMessage.textContent = "Use 1-32 letters, numbers, spaces, _ or - for the user name.";
+        const message = "Use 1-32 letters, numbers, spaces, _ or - for the user name.";
+        sceneMessage.textContent = message;
+        setSceneAccountMessage(message);
         return null;
     }
     localStorage.setItem("mujocoweb-scene-user", user);
+    sceneAccountLabel.textContent = `User: ${user}`;
     return user;
 }
 
@@ -815,7 +837,7 @@ async function sceneRequest<T>(path: string, options: RequestInit = {}): Promise
 }
 
 async function loadUserList(announce = true): Promise<void> {
-    if (announce) sceneMessage.textContent = "Loading existing test users…";
+    if (announce) setSceneAccountMessage("Loading existing test users…");
     try {
         const result = await sceneRequest<{users: string[]}>("/users");
         const options = result.users.length
@@ -826,13 +848,13 @@ async function loadUserList(announce = true): Promise<void> {
         const matchingUser = result.users.find((user) => user.toLocaleLowerCase() === current.toLocaleLowerCase());
         if (matchingUser) sceneUserSelect.value = matchingUser;
         sceneExistingUserButton.disabled = result.users.length === 0;
-        if (announce) sceneMessage.textContent = result.users.length
+        if (announce) setSceneAccountMessage(result.users.length
             ? "Choose a user, or create a new name below."
-            : "No users exist yet. Enter a name below to create the first one.";
+            : "No users exist yet. Enter a name below to create the first one.");
     } catch (error) {
         sceneUserSelect.replaceChildren(new Option("Could not load users", ""));
         sceneExistingUserButton.disabled = true;
-        if (announce) sceneMessage.textContent = error instanceof Error ? error.message : "Could not load users.";
+        if (announce) setSceneAccountMessage(error instanceof Error ? error.message : "Could not load users.");
     }
 }
 
@@ -840,17 +862,19 @@ async function loadSceneList(announce = true): Promise<void> {
     const user = sceneUser();
     if (!user) return;
     sceneUserButton.disabled = true;
-    if (announce) sceneMessage.textContent = `Opening ${user}'s test account…`;
+    if (announce) setSceneAccountMessage(`Opening ${user}'s test account…`);
     try {
         const result = await sceneRequest<{scenes: string[]}>(`/users/${encodeURIComponent(user)}/scenes`);
         sceneSelect.replaceChildren(...result.scenes.map((name) => new Option(name, name)));
         const preferred = result.scenes.includes(sceneNameInput.value) ? sceneNameInput.value : result.scenes[0];
         if (preferred) sceneSelect.value = preferred;
         await loadUserList(false);
-        if (announce) sceneMessage.textContent = `${user}'s scenes are ready. No password is required in this test version.`;
+        if (announce) setSceneAccountMessage(`${user}'s scenes are ready. No password is required in this test version.`);
     } catch (error) {
         sceneSelect.replaceChildren(new Option("Could not load scenes", ""));
-        sceneMessage.textContent = error instanceof Error ? error.message : "Could not load scenes.";
+        const message = error instanceof Error ? error.message : "Could not load scenes.";
+        sceneMessage.textContent = message;
+        setSceneAccountMessage(message);
     } finally {
         sceneUserButton.disabled = false;
     }
@@ -1268,8 +1292,8 @@ function setLogsOpen(open: boolean): void {
 
 codeEditorDialog.inert = true;
 codeEditorDialog.setAttribute("aria-hidden", "true");
-codeEditorButton.addEventListener("click", () => setEditorOpen(true));
-codeEditorRailButton.addEventListener("click", () => setEditorOpen(true));
+codeEditorButton.addEventListener("click", () => { setSceneAccountOpen(false); setEditorOpen(true); });
+codeEditorRailButton.addEventListener("click", () => { setSceneAccountOpen(false); setEditorOpen(true); });
 closeCodeEditorButton.addEventListener("click", () => setEditorOpen(false));
 simulationPane.addEventListener("click", (event) => {
     if (!workbench.classList.contains("editor-open") && !workbench.classList.contains("logs-open")) return;
@@ -2038,8 +2062,13 @@ simulationWindow.addEventListener("dragleave", (event) => {
 simulationWindow.addEventListener("drop", dropSceneAsset);
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
-setupButton.addEventListener("click", openSetupPanel);
-editConfigurationButton.addEventListener("click", openSetupPanel);
+sceneAccountButton.addEventListener("click", () => {
+    const opening = sceneAccountPanel.hasAttribute("hidden");
+    setSceneAccountOpen(opening);
+    if (opening) void loadUserList(false);
+});
+setupButton.addEventListener("click", () => { setSceneAccountOpen(false); openSetupPanel(); });
+editConfigurationButton.addEventListener("click", () => { setSceneAccountOpen(false); openSetupPanel(); });
 closeSetupButton.addEventListener("click", closeSetupPanel);
 setupOverlay.addEventListener("click", closeSetupPanel);
 resetSetupButton.addEventListener("click", resetConfiguration);
@@ -2085,9 +2114,17 @@ setupForm.addEventListener("submit", (event) => {
 
 document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    if (setupPanel.classList.contains("open")) closeSetupPanel();
+    if (!sceneAccountPanel.hidden) setSceneAccountOpen(false);
+    else if (setupPanel.classList.contains("open")) closeSetupPanel();
     else if (workbench.classList.contains("editor-open")) setEditorOpen(false);
     else if (workbench.classList.contains("logs-open")) setLogsOpen(false);
+});
+
+document.addEventListener("pointerdown", (event) => {
+    const target = event.target as Node;
+    if (!sceneAccountPanel.hidden && !sceneAccountPanel.contains(target) && !sceneAccountButton.contains(target)) {
+        setSceneAccountOpen(false);
+    }
 });
 
 window.addEventListener("beforeunload", () => {
