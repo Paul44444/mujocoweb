@@ -153,6 +153,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <div class="scene-account-field"><label for="sceneUserSelect">Existing users</label><div class="scene-account-row"><select id="sceneUserSelect" class="setup-select"><option value="">Loading users…</option></select><button id="sceneExistingUserButton" class="secondary-button" type="button">Open user</button></div></div>
           <div class="scene-account-field"><label for="sceneUserInput">Create user or enter name</label><div class="scene-account-row"><input id="sceneUserInput" class="setup-input" value="Guest" maxlength="32" autocomplete="username" /><button id="sceneUserButton" class="secondary-button" type="button">Create / open user</button></div></div>
           <p id="sceneAccountMessage" class="generator-message" aria-live="polite"></p>
+          <div class="scene-storage-controls">
+            <div class="scene-account-field"><label for="sceneSelect">Load scene</label><div class="scene-account-row"><select id="sceneSelect" class="setup-select"><option value="">Loading scenes…</option></select><button id="sceneLoadButton" class="secondary-button" type="button">Load scene</button></div></div>
+            <div class="scene-account-field"><label for="sceneNameInput">Save current scene as</label><div class="scene-account-row"><input id="sceneNameInput" class="setup-input" value="DAPG Relocate Start" maxlength="48" /><button id="sceneSaveButton" class="secondary-button" type="button">Save scene</button></div></div>
+          </div>
+          <p id="sceneMessage" class="generator-message scene-storage-message" aria-live="polite"></p>
         </div>
 
         <div class="simulation-window">
@@ -490,19 +495,14 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
         <details class="advanced-settings scene-editor" open>
           <summary>Backend scene editor</summary>
-          <p>Assets and saved scenes live on the MuJoCo backend. Choose an asset to add it to the scene draft.</p>
-          <label class="field-label" for="sceneSelect">Saved scenes</label>
-          <div class="scene-actions"><select id="sceneSelect" class="setup-select"><option value="">Loading scenes…</option></select><button id="sceneLoadButton" class="secondary-button" type="button">Load scene</button></div>
+          <p>Choose assets to add to the scene draft. Loading and saving scenes is available from the User menu in the Live Simulation toolbar.</p>
           <div id="sceneAssetPalette" class="scene-asset-palette">
             <button type="button" data-scene-asset="box">▣ Cube</button>
             <button type="button" data-scene-asset="sphere">● Sphere</button>
             <button type="button" data-scene-asset="cylinder">▯ Cylinder</button>
             <button type="button" data-scene-asset="hammer">⚒ Hammer</button>
           </div>
-          <label class="field-label" for="sceneNameInput">Scene name</label>
-          <div class="scene-actions"><input id="sceneNameInput" class="setup-input" value="DAPG Relocate Start" /><button id="sceneSaveButton" class="secondary-button" type="button">Save scene</button></div>
           <div id="sceneDraft" class="scene-draft">Start with the DAPG Relocate cube, or add an asset above.</div>
-          <p id="sceneMessage" class="generator-message" aria-live="polite"></p>
         </details>
 
         <section class="setup-section">

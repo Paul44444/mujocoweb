@@ -1238,6 +1238,17 @@ body.panel-open {
 .scene-account-row button { flex: 0 0 auto; white-space: nowrap; }
 .scene-account-panel .generator-message { grid-column: 1 / -1; margin: 0; }
 
+.scene-storage-controls {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    padding-top: 13px;
+    border-top: 1px solid rgba(161, 161, 170, 0.2);
+}
+
+.scene-storage-message:empty { display: none; }
+
 .scene-draft {
     min-height: 82px;
     padding: 12px;
@@ -1931,6 +1942,7 @@ body.panel-open {
     .scene-account-panel .generator-message { grid-column: 1; }
     .scene-account-row { flex-wrap: wrap; }
     .scene-account-row button { flex: 1 1 140px; }
+    .scene-storage-controls { grid-template-columns: minmax(0, 1fr); }
 
     .simulation-window {
         min-height: 300px;
