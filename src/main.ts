@@ -73,23 +73,6 @@ function backendWebSocketUrl(path: string): URL {
 }
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
-  <nav class="navbar">
-    <div class="nav-content">
-      <div class="nav-logo">
-        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-          <path d="M2 17l10 5 10-5"/>
-          <path d="M2 12l10 5 10-5"/>
-        </svg>
-        <span class="nav-title">DAPG Web Demo</span>
-      </div>
-      <div class="nav-tabs">
-        <button class="nav-tab active" data-tab="demo">Live Demo</button>
-        <button class="nav-tab" data-tab="about">About</button>
-      </div>
-    </div>
-  </nav>
-
   <main class="page">
     <section id="demo-section" class="tab-content active">
       <section class="hero">
@@ -1903,27 +1886,6 @@ function displayFrame(frameBlob: Blob): void {
     simulationImage.classList.add("visible");
     placeholder.classList.add("hidden");
 }
-
-// Tab switching functionality
-const navTabs = document.querySelectorAll<HTMLButtonElement>(".nav-tab");
-const tabContents = document.querySelectorAll<HTMLElement>(".tab-content");
-
-navTabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
-        const targetTab = tab.dataset.tab;
-
-        navTabs.forEach((t) => t.classList.remove("active"));
-        tab.classList.add("active");
-
-        tabContents.forEach((content) => {
-            if (content.id === `${targetTab}-section`) {
-                content.classList.add("active");
-            } else {
-                content.classList.remove("active");
-            }
-        });
-    });
-});
 
 startButton.addEventListener("click", handlePlaybackButton);
 simulationImage.addEventListener("click", handleSimulationClick);
