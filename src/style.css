@@ -1531,10 +1531,9 @@ body.panel-open {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-top: 24px;
-    padding: 16px 20px;
-    border: 1px solid rgba(118, 185, 0, 0.2);
-    border-radius: 12px;
+    margin: 0;
+    padding: 11px 20px;
+    border-top: 1px solid rgba(118, 185, 0, 0.2);
     background: rgba(118, 185, 0, 0.05);
     color: #a1a1aa;
     font-size: 0.9rem;
