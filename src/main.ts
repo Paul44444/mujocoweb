@@ -1509,8 +1509,8 @@ function updateEngineUi(): void {
     });
     cameraHelp.textContent = usesMujoco
         ? "Drag to orbit · Scroll or pinch to zoom"
-        : "Isaac Lab RTX camera · interactive orbit follows in the next step";
-    resetCameraButton.disabled = !usesMujoco;
+        : "Drag to orbit · Scroll or pinch to zoom · Isaac RTX";
+    resetCameraButton.disabled = !socket || socket.readyState !== WebSocket.OPEN;
 }
 
 try {
@@ -1694,7 +1694,7 @@ async function handlePlaybackButton(): Promise<void> {
 }
 
 function beginCameraDrag(event: PointerEvent): void {
-    if (selectedSimulationEngine !== "mujoco" || !socket || socket.readyState !== WebSocket.OPEN || event.button !== 0) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN || event.button !== 0) return;
     if (editorPreviewActive && pickSceneAsset(event)) { event.preventDefault(); return; }
     event.preventDefault();
     activePointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
@@ -1757,7 +1757,7 @@ function endCameraDrag(event: PointerEvent): void {
 }
 
 function zoomCamera(event: WheelEvent): void {
-    if (selectedSimulationEngine !== "mujoco" || !socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
     event.preventDefault();
     sendSimulationCommand({type: "camera_zoom", delta: Math.sign(event.deltaY)});
 }
@@ -1810,7 +1810,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         setStatus("Connected", "connected");
         startButton.disabled = false;
         updatePlaybackButton();
-        resetCameraButton.disabled = selectedSimulationEngine !== "mujoco";
+        resetCameraButton.disabled = false;
     };
 
     connection.onerror = (event) => {
