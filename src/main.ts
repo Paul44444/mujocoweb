@@ -87,7 +87,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <div id="workbench" class="workbench">
         <aside id="editorLogsPanel" class="workbench-logs" aria-label="Backend logs">
           <div class="workbench-logs-header">
-            <div><span class="panel-eyebrow">Live output</span><h2>Backend log</h2></div>
+            <div><span class="panel-eyebrow">Live output</span><h2 id="editorLogsTitle">Simulation log</h2></div>
             <div class="workbench-logs-actions">
               <button id="editorLogsExpandButton" class="secondary-button" type="button" aria-expanded="false">Expand</button>
               <button id="editorLogsRefreshButton" class="secondary-button" type="button" aria-label="Refresh backend logs">↻</button>
@@ -556,8 +556,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <header class="code-editor-header">
         <div>
           <p class="panel-eyebrow">Advanced · authenticated</p>
-          <h2 id="codeEditorTitle">MuJoCo source editor</h2>
-          <p>Changes to Python run on the backend computer. A syntax check is not a security check.</p>
+          <h2 id="codeEditorTitle">Simulation source editor</h2>
+          <p id="codeEditorSubtitle">Changes to Python run on the backend computer. A syntax check is not a security check.</p>
         </div>
         <button id="closeCodeEditorButton" class="secondary-button" type="button" aria-label="Return to simulation">← Simulation</button>
       </header>
@@ -666,6 +666,8 @@ const codeEditorButton = document.querySelector<HTMLButtonElement>("#codeEditorB
 const codeEditorRailButton = document.querySelector<HTMLButtonElement>("#codeEditorRailButton")!;
 const codeEditorPane = document.querySelector<HTMLElement>("#codeEditorPane")!;
 const codeEditorDialog = document.querySelector<HTMLElement>("#codeEditorDialog")!;
+const codeEditorTitle = document.querySelector<HTMLElement>("#codeEditorTitle")!;
+const codeEditorSubtitle = document.querySelector<HTMLElement>("#codeEditorSubtitle")!;
 const workbench = document.querySelector<HTMLElement>("#workbench")!;
 const simulationPane = document.querySelector<HTMLElement>("#simulationPane")!;
 const closeCodeEditorButton = document.querySelector<HTMLButtonElement>("#closeCodeEditorButton")!;
@@ -688,6 +690,7 @@ const editorLogsExpandButton = document.querySelector<HTMLButtonElement>("#edito
 const editorLogsPanel = document.querySelector<HTMLElement>("#editorLogsPanel")!;
 const editorLogsOutput = document.querySelector<HTMLElement>("#editorLogsOutput")!;
 const editorLogsMessage = document.querySelector<HTMLParagraphElement>("#editorLogsMessage")!;
+const editorLogsTitle = document.querySelector<HTMLElement>("#editorLogsTitle")!;
 
 workbench.appendChild(codeEditorPane);
 const objectCodeInput = document.querySelector<HTMLTextAreaElement>("#objectCodeInput")!;
@@ -1009,6 +1012,7 @@ type EditorDocument = {id: string; name: string; description: string; content: s
 type EditorLocation = {fileId: string; position: number};
 let editorFileId = "";
 let editorView: EditorView | null = null;
+let renderedEditorEngine: SimulationEngine | null = null;
 const editorBackHistory: EditorLocation[] = [];
 const editorForwardHistory: EditorLocation[] = [];
 
@@ -1054,7 +1058,9 @@ function createCodeEditor(content: string, position = 0): void {
 
 async function editorRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
     await refreshPublishedBackendUrl();
-    const response = await fetch(backendHttpUrl(`/api/editor${path}`), {
+    const editorUrl = new URL(backendHttpUrl(`/api/editor${path}`));
+    editorUrl.searchParams.set("engine", selectedSimulationEngine);
+    const response = await fetch(editorUrl, {
         ...options,
         headers: {
             "Authorization": `Bearer ${editorToken}`,
@@ -1074,6 +1080,32 @@ async function editorRequest<T>(path: string, options: RequestInit = {}): Promis
 
 function editorStatus(message: string): void {
     editorMessage.textContent = message;
+}
+
+function updateEditorEngineUi(): void {
+    const usesIsaac = selectedSimulationEngine === "isaaclab";
+    codeEditorTitle.textContent = usesIsaac ? "Isaac Lab source editor" : "MuJoCo / DAPG source editor";
+    editorLogsTitle.textContent = usesIsaac ? "Isaac Lab log" : "MuJoCo backend log";
+    codeEditorSubtitle.textContent = usesIsaac
+        ? "Browse the active Franka task, robot, policy configs and persistent RTX web worker. Saved runtime changes restart Isaac Lab."
+        : "Browse the DAPG and RoboHive sources used by the MuJoCo simulation. Saved runtime changes restart the backend.";
+    editorSaveButton.textContent = usesIsaac ? "Save and apply to Isaac Lab" : "Save and restart backend";
+    if (renderedEditorEngine === selectedSimulationEngine) return;
+    renderedEditorEngine = selectedSimulationEngine;
+    editorFileId = "";
+    editorRevision = "";
+    editorBackHistory.length = 0;
+    editorForwardHistory.length = 0;
+    updateEditorHistoryButtons();
+    editorView?.destroy();
+    editorView = null;
+    editorContent.replaceChildren();
+    editorCurrentFile.textContent = "Choose a source file";
+    editorDescription.textContent = "";
+    editorSaveButton.disabled = true;
+    editorRevisionSelect.disabled = true;
+    editorRestoreButton.disabled = true;
+    if (editorToken) void loadEditorTree();
 }
 
 async function connectEditor(): Promise<void> {
@@ -1105,7 +1137,7 @@ function renderEditorTree(nodes: EditorTreeNode[]): DocumentFragment {
         if (node.kind === "directory") {
             const details = document.createElement("details");
             details.className = "editor-tree-directory";
-            details.open = node.name === "dapg" || node.name === "live-robohive";
+            details.open = node.name === "dapg" || node.name === "live-robohive" || node.name.startsWith("isaac-");
             const summary = document.createElement("summary");
             summary.textContent = node.name;
             details.append(summary, renderEditorTree(node.children));
@@ -1166,7 +1198,7 @@ async function loadEditorFile(position = 0): Promise<void> {
         editorSaveButton.disabled = false;
         editorRevisionSelect.disabled = file.revisions.length === 0;
         editorRestoreButton.disabled = file.revisions.length === 0;
-        editorStatus("Loaded. Saving creates a backup and restarts the backend.");
+        editorStatus("Loaded. Saving creates a backup and applies the change to the relevant runtime.");
     } catch (error) {
         editorStatus(error instanceof Error ? error.message : "Could not load source file.");
     }
@@ -1204,15 +1236,17 @@ async function moveEditorHistory(source: EditorLocation[], destination: EditorLo
 
 async function saveEditorFile(): Promise<void> {
     if (!editorRevision || !editorToken) return;
-    if (!window.confirm("Save this source file and restart the backend? The code will run with this computer's user permissions.")) return;
+    if (!window.confirm(`Save this source file and apply it to ${selectedSimulationEngine === "isaaclab" ? "Isaac Lab" : "the MuJoCo backend"}? The code will run with this computer's user permissions.`)) return;
     editorSaveButton.disabled = true;
     editorStatus("Validating and saving…");
     try {
-        await editorRequest<{sha256: string; restarting: boolean}>(`/files/${encodeURIComponent(editorFileId)}`, {
+        const result = await editorRequest<{sha256: string; restarting: boolean; runtime?: string}>(`/files/${encodeURIComponent(editorFileId)}`, {
             method: "PUT",
             body: JSON.stringify({content: editorView?.state.doc.toString() ?? "", expected_sha256: editorRevision}),
         });
-        editorStatus("Saved. The backend is restarting; wait a few seconds, then reload this file.");
+        editorStatus(result.restarting
+            ? `Saved. ${result.runtime === "isaaclab" ? "Isaac Lab" : "The backend"} is restarting; the warm-up can take a short while.`
+            : "Saved. No running service restart was required.");
         editorView?.destroy();
         editorView = null;
     } catch (error) {
@@ -1225,7 +1259,7 @@ async function saveEditorFile(): Promise<void> {
 async function restoreEditorFile(): Promise<void> {
     const revision = editorRevisionSelect.value;
     if (!revision || !editorRevision || !editorToken) return;
-    if (!window.confirm(`Restore ${revision === "original" ? "the original file" : revision} and restart the backend?`)) return;
+    if (!window.confirm(`Restore ${revision === "original" ? "the original file" : revision} and apply it to the relevant runtime?`)) return;
     editorRestoreButton.disabled = true;
     editorStatus("Restoring backup…");
     try {
@@ -1233,7 +1267,7 @@ async function restoreEditorFile(): Promise<void> {
             method: "POST",
             body: JSON.stringify({revision, expected_sha256: editorRevision}),
         });
-        editorStatus("Backup restored. Wait for the backend to restart, then reload this file.");
+        editorStatus("Backup restored. The relevant runtime is applying the change.");
         editorView?.destroy();
         editorView = null;
     } catch (error) {
@@ -1511,6 +1545,7 @@ function updateEngineUi(): void {
         ? "Drag to orbit · Scroll or pinch to zoom"
         : "Drag to orbit · Scroll or pinch to zoom · Isaac RTX";
     resetCameraButton.disabled = !socket || socket.readyState !== WebSocket.OPEN;
+    updateEditorEngineUi();
 }
 
 try {
