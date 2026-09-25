@@ -94,6 +94,7 @@ h1 {
 }
 
 .workbench {
+    position: relative;
     display: grid;
     grid-template-columns: minmax(190px, 240px) minmax(0, 1fr) 48px;
     align-items: stretch;
@@ -101,6 +102,261 @@ h1 {
     height: calc(100dvh - 91px);
     min-height: 620px;
     transition: grid-template-columns 0.4s ease;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.ai-assistant-launcher {
+    position: absolute;
+    z-index: 28;
+    right: 5px;
+    bottom: 14px;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    min-width: 38px;
+    height: 64px;
+    padding: 6px 3px;
+    border: 1px solid rgba(163, 230, 53, 0.55);
+    border-radius: 12px;
+    background: #161b10;
+    color: #bef264;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.42), 0 0 22px rgba(118, 185, 0, 0.12);
+    cursor: pointer;
+}
+
+.ai-assistant-launcher:hover,
+.ai-assistant-launcher[aria-expanded="true"] {
+    background: #26330f;
+    color: #d9f99d;
+}
+
+.ai-assistant-launcher svg {
+    width: 20px;
+    fill: currentColor;
+}
+
+.ai-assistant-launcher span {
+    font-size: 0.65rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+}
+
+.ai-assistant-panel {
+    position: absolute;
+    z-index: 27;
+    right: 55px;
+    bottom: 14px;
+    display: flex;
+    width: min(470px, calc(100% - 80px));
+    height: min(540px, calc(100% - 28px));
+    min-height: 360px;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(163, 230, 53, 0.45);
+    border-radius: 16px;
+    background: rgba(17, 17, 19, 0.98);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(118, 185, 0, 0.08);
+    backdrop-filter: blur(18px);
+}
+
+.ai-assistant-panel[hidden] {
+    display: none;
+}
+
+.ai-assistant-panel.maximized {
+    inset: 12px 55px 12px 12px;
+    width: auto;
+    height: auto;
+}
+
+.ai-assistant-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 13px 14px;
+    border-bottom: 1px solid #3f3f46;
+    background: #18181b;
+}
+
+.ai-assistant-header > div:first-child {
+    display: grid;
+    gap: 2px;
+}
+
+.ai-assistant-header strong {
+    color: #f4f4f5;
+    font-size: 0.96rem;
+}
+
+.ai-assistant-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.ai-assistant-actions button {
+    min-width: 32px;
+    padding: 6px 8px;
+    border: 1px solid #3f3f46;
+    border-radius: 7px;
+    background: #27272a;
+    color: #d4d4d8;
+    cursor: pointer;
+}
+
+.ai-assistant-actions button:hover {
+    border-color: #65a30d;
+    color: #d9f99d;
+}
+
+.ai-assistant-context {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    overflow: hidden;
+    border-bottom: 1px solid #27272a;
+    color: #a1a1aa;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.7rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-assistant-context > #aiAssistantContext {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ai-file-context-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: auto;
+    color: #d4d4d8;
+    cursor: pointer;
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 0.68rem;
+}
+
+.ai-file-context-toggle input {
+    accent-color: #84cc16;
+}
+
+.ai-assistant-context span:first-child {
+    color: #84cc16;
+}
+
+.ai-assistant-messages {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 14px;
+}
+
+.ai-message {
+    width: fit-content;
+    max-width: 92%;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid #3f3f46;
+    border-radius: 12px 12px 12px 3px;
+    background: #202024;
+}
+
+.ai-message.user {
+    margin-left: auto;
+    border-color: rgba(118, 185, 0, 0.42);
+    border-radius: 12px 12px 3px 12px;
+    background: rgba(77, 124, 15, 0.2);
+}
+
+.ai-message strong {
+    display: block;
+    margin-bottom: 5px;
+    color: #a3e635;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.ai-message pre {
+    margin: 0;
+    color: #e4e4e7;
+    font: 0.79rem/1.55 Inter, system-ui, sans-serif;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.ai-message.thinking {
+    color: #a1a1aa;
+    font-size: 0.78rem;
+    animation: assistant-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes assistant-pulse {
+    50% { opacity: 0.52; }
+}
+
+.ai-assistant-form {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid #3f3f46;
+}
+
+.ai-assistant-form textarea {
+    flex: 1 1 0;
+    min-height: 48px;
+    max-height: 150px;
+    resize: vertical;
+    padding: 10px;
+    border: 1px solid #52525b;
+    border-radius: 9px;
+    outline: none;
+    background: #09090b;
+    color: #f4f4f5;
+    font: inherit;
+}
+
+.ai-assistant-form textarea:focus {
+    border-color: #84cc16;
+    box-shadow: 0 0 0 2px rgba(132, 204, 22, 0.12);
+}
+
+.ai-assistant-form button {
+    height: 40px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 9px;
+    background: #84cc16;
+    color: #111;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.ai-assistant-form button:disabled {
+    opacity: 0.62;
+    cursor: wait;
+}
+
+.ai-assistant-note {
+    margin: -2px 12px 10px;
+    color: #71717a;
+    font-size: 0.65rem;
+    line-height: 1.35;
 }
 
 .workbench.editor-open {
@@ -1843,6 +2099,30 @@ body.panel-open {
         min-height: 0;
         grid-template-columns: minmax(0, 1fr) 42px;
         grid-template-areas: "logs logs" "sim code";
+    }
+
+    .ai-assistant-launcher {
+        position: fixed;
+        z-index: 42;
+        right: 12px;
+        bottom: 12px;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+    }
+
+    .ai-assistant-launcher span {
+        display: none;
+    }
+
+    .ai-assistant-panel,
+    .ai-assistant-panel.maximized {
+        position: fixed;
+        z-index: 41;
+        inset: 12px 12px 70px;
+        width: auto;
+        height: auto;
+        min-height: 0;
     }
 
     .workbench.editor-open {

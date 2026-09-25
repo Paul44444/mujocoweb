@@ -589,6 +589,32 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       </div>
     </section>
   </aside>
+
+  <button id="aiAssistantLauncher" class="ai-assistant-launcher" type="button" aria-controls="aiAssistantPanel" aria-expanded="false" aria-label="Open AI assistant">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.45 5.05L18.5 8.5l-5.05 1.45L12 15l-1.45-5.05L5.5 8.5l5.05-1.45L12 2Z"/><path d="M19 14l.8 2.7 2.7.8-2.7.8L19 21l-.8-2.7-2.7-.8 2.7-.8L19 14Z"/></svg>
+    <span>AI</span>
+  </button>
+  <aside id="aiAssistantPanel" class="ai-assistant-panel" aria-label="AI assistant" hidden>
+    <header class="ai-assistant-header">
+      <div><span class="panel-eyebrow">AI assistant</span><strong>Simulation copilot</strong></div>
+      <div class="ai-assistant-actions">
+        <button id="aiAssistantClearButton" type="button" title="Clear conversation">Clear</button>
+        <button id="aiAssistantMaximizeButton" type="button" title="Maximize assistant" aria-label="Maximize assistant">↗</button>
+        <button id="aiAssistantMinimizeButton" type="button" title="Minimize assistant" aria-label="Minimize assistant">—</button>
+      </div>
+    </header>
+    <div class="ai-assistant-context">
+      <span aria-hidden="true">◉</span><span id="aiAssistantContext">Isaac Lab · no source file selected</span>
+      <label class="ai-file-context-toggle" title="When enabled, the current file is sent to OpenAI with your next message"><input id="aiAssistantIncludeFile" type="checkbox" /> Share current file</label>
+    </div>
+    <div id="aiAssistantMessages" class="ai-assistant-messages" aria-live="polite"></div>
+    <form id="aiAssistantForm" class="ai-assistant-form">
+      <label class="sr-only" for="aiAssistantInput">Message to the AI assistant</label>
+      <textarea id="aiAssistantInput" rows="2" maxlength="4000" placeholder="Ask about the simulation or the open source file…"></textarea>
+      <button id="aiAssistantSendButton" type="submit">Send</button>
+    </form>
+    <p class="ai-assistant-note">Safety-checked and rate-limited · <span id="aiAssistantQuota">file sharing is off</span>. The assistant never saves or executes code automatically.</p>
+  </aside>
 `;
 
 const startButton =
@@ -693,8 +719,20 @@ const editorLogsPanel = document.querySelector<HTMLElement>("#editorLogsPanel")!
 const editorLogsOutput = document.querySelector<HTMLElement>("#editorLogsOutput")!;
 const editorLogsMessage = document.querySelector<HTMLParagraphElement>("#editorLogsMessage")!;
 const editorLogsTitle = document.querySelector<HTMLElement>("#editorLogsTitle")!;
+const aiAssistantLauncher = document.querySelector<HTMLButtonElement>("#aiAssistantLauncher")!;
+const aiAssistantPanel = document.querySelector<HTMLElement>("#aiAssistantPanel")!;
+const aiAssistantContext = document.querySelector<HTMLElement>("#aiAssistantContext")!;
+const aiAssistantIncludeFile = document.querySelector<HTMLInputElement>("#aiAssistantIncludeFile")!;
+const aiAssistantQuota = document.querySelector<HTMLElement>("#aiAssistantQuota")!;
+const aiAssistantMessages = document.querySelector<HTMLElement>("#aiAssistantMessages")!;
+const aiAssistantForm = document.querySelector<HTMLFormElement>("#aiAssistantForm")!;
+const aiAssistantInput = document.querySelector<HTMLTextAreaElement>("#aiAssistantInput")!;
+const aiAssistantSendButton = document.querySelector<HTMLButtonElement>("#aiAssistantSendButton")!;
+const aiAssistantClearButton = document.querySelector<HTMLButtonElement>("#aiAssistantClearButton")!;
+const aiAssistantMaximizeButton = document.querySelector<HTMLButtonElement>("#aiAssistantMaximizeButton")!;
+const aiAssistantMinimizeButton = document.querySelector<HTMLButtonElement>("#aiAssistantMinimizeButton")!;
 
-workbench.appendChild(codeEditorPane);
+workbench.append(codeEditorPane, aiAssistantLauncher, aiAssistantPanel);
 const objectCodeInput = document.querySelector<HTMLTextAreaElement>("#objectCodeInput")!;
 const objectCodeMessage = document.querySelector<HTMLParagraphElement>("#objectCodeMessage")!;
 const loadObjectCodeButton = document.querySelector<HTMLButtonElement>("#loadObjectCodeButton")!;
@@ -1016,6 +1054,130 @@ type EditorDocument = {id: string; name: string; description: string; content: s
 type EditorLocation = {fileId: string; position: number};
 let editorFileId = "";
 let editorView: EditorView | null = null;
+type AssistantMessage = {role: "user" | "assistant"; content: string};
+const ASSISTANT_STORAGE_KEY = "mujocoweb-ai-assistant-history";
+let assistantMessages: AssistantMessage[] = [];
+let assistantRequestPending = false;
+
+try {
+    const storedMessages = JSON.parse(localStorage.getItem(ASSISTANT_STORAGE_KEY) || "[]") as unknown;
+    if (Array.isArray(storedMessages)) {
+        assistantMessages = storedMessages.filter((message): message is AssistantMessage => {
+            if (!message || typeof message !== "object") return false;
+            const candidate = message as Record<string, unknown>;
+            return (candidate.role === "user" || candidate.role === "assistant") && typeof candidate.content === "string";
+        }).slice(-30);
+    }
+} catch {
+    localStorage.removeItem(ASSISTANT_STORAGE_KEY);
+}
+
+function assistantFileLabel(): string {
+    if (!editorFileId) return "no source file selected";
+    return editorFileId.replace(":", "/");
+}
+
+function updateAssistantContext(): void {
+    const engine = selectedSimulationEngine === "isaaclab" ? "Isaac Lab" : "MuJoCo / DAPG";
+    aiAssistantContext.textContent = `${engine} · ${assistantFileLabel()}`;
+}
+
+function renderAssistantMessages(): void {
+    aiAssistantMessages.replaceChildren();
+    const messages = assistantMessages.length ? assistantMessages : [{
+        role: "assistant" as const,
+        content: "Hi — ask me about the simulation, an error, or the source file currently open in the editor.",
+    }];
+    for (const message of messages) {
+        const article = document.createElement("article");
+        article.className = `ai-message ${message.role}`;
+        const label = document.createElement("strong");
+        label.textContent = message.role === "user" ? "You" : "AI";
+        const body = document.createElement("pre");
+        body.textContent = message.content;
+        article.append(label, body);
+        aiAssistantMessages.append(article);
+    }
+    aiAssistantMessages.scrollTop = aiAssistantMessages.scrollHeight;
+}
+
+function persistAssistantMessages(): void {
+    assistantMessages = assistantMessages.slice(-30);
+    localStorage.setItem(ASSISTANT_STORAGE_KEY, JSON.stringify(assistantMessages));
+    renderAssistantMessages();
+}
+
+function setAssistantOpen(open: boolean): void {
+    aiAssistantPanel.hidden = !open;
+    aiAssistantLauncher.setAttribute("aria-expanded", String(open));
+    if (open) {
+        updateAssistantContext();
+        renderAssistantMessages();
+        window.setTimeout(() => aiAssistantInput.focus(), 0);
+    } else {
+        aiAssistantPanel.classList.remove("maximized");
+        aiAssistantMaximizeButton.textContent = "↗";
+        aiAssistantMaximizeButton.title = "Maximize assistant";
+    }
+}
+
+async function sendAssistantMessage(): Promise<void> {
+    const prompt = aiAssistantInput.value.trim();
+    if (!prompt || assistantRequestPending) return;
+    const history = assistantMessages.slice(-10);
+    assistantMessages.push({role: "user", content: prompt});
+    persistAssistantMessages();
+    aiAssistantInput.value = "";
+    assistantRequestPending = true;
+    aiAssistantSendButton.disabled = true;
+    aiAssistantSendButton.textContent = "Thinking…";
+    const thinking = document.createElement("article");
+    thinking.className = "ai-message assistant thinking";
+    thinking.textContent = "AI is thinking…";
+    aiAssistantMessages.append(thinking);
+    aiAssistantMessages.scrollTop = aiAssistantMessages.scrollHeight;
+    try {
+        await refreshPublishedBackendUrl();
+        const response = await fetch(backendHttpUrl("/api/assistant/chat"), {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                prompt,
+                engine: selectedSimulationEngine,
+                file_id: aiAssistantIncludeFile.checked ? editorFileId || null : null,
+                file_content: aiAssistantIncludeFile.checked ? editorView?.state.doc.toString().slice(0, 20_000) || null : null,
+                history,
+            }),
+        });
+        if (!response.ok) {
+            let message = `Assistant request failed (${response.status}).`;
+            try {
+                const error = await response.json() as {detail?: string};
+                if (error.detail) message = error.detail;
+            } catch { /* Keep the status message. */ }
+            throw new Error(message);
+        }
+        const result = await response.json() as {reply: string; quota?: {day_remaining: number; month_remaining: number}};
+        assistantMessages.push({role: "assistant", content: result.reply});
+        if (result.quota) {
+            aiAssistantQuota.textContent = `${result.quota.day_remaining} public requests left today · ${result.quota.month_remaining} this month`;
+        }
+    } catch (error) {
+        assistantMessages.push({
+            role: "assistant",
+            content: error instanceof Error ? `I could not answer: ${error.message}` : "I could not reach the assistant service.",
+        });
+    } finally {
+        assistantRequestPending = false;
+        aiAssistantSendButton.disabled = false;
+        aiAssistantSendButton.textContent = "Send";
+        persistAssistantMessages();
+        aiAssistantInput.focus();
+    }
+}
+
+renderAssistantMessages();
+updateAssistantContext();
 let renderedEditorEngine: SimulationEngine | null = null;
 const editorBackHistory: EditorLocation[] = [];
 const editorForwardHistory: EditorLocation[] = [];
@@ -1088,6 +1250,7 @@ function editorStatus(message: string): void {
 
 function updateEditorEngineUi(): void {
     const usesIsaac = selectedSimulationEngine === "isaaclab";
+    updateAssistantContext();
     codeEditorTitle.textContent = usesIsaac ? "Isaac Lab source editor" : "MuJoCo / DAPG source editor";
     editorLogsTitle.textContent = usesIsaac ? "Isaac Lab log" : "MuJoCo backend log";
     codeEditorSubtitle.textContent = usesIsaac
@@ -1190,6 +1353,7 @@ async function loadEditorFile(position = 0): Promise<void> {
         editorRevision = file.sha256;
         editorCurrentFile.textContent = file.description;
         editorDescription.textContent = `${file.name} · ${file.description}`;
+        updateAssistantContext();
         document.querySelectorAll(".editor-tree-file").forEach((button) => {
             button.classList.toggle("selected", (button as HTMLElement).dataset.fileId === fileId);
         });
@@ -1368,6 +1532,34 @@ editorLogsPanel.addEventListener("click", (event) => {
 });
 editorBackButton.addEventListener("click", () => void moveEditorHistory(editorBackHistory, editorForwardHistory));
 editorForwardButton.addEventListener("click", () => void moveEditorHistory(editorForwardHistory, editorBackHistory));
+aiAssistantLauncher.addEventListener("click", () => setAssistantOpen(Boolean(aiAssistantPanel.hidden)));
+aiAssistantMinimizeButton.addEventListener("click", () => setAssistantOpen(false));
+aiAssistantMaximizeButton.addEventListener("click", () => {
+    const maximized = aiAssistantPanel.classList.toggle("maximized");
+    aiAssistantMaximizeButton.textContent = maximized ? "↘" : "↗";
+    aiAssistantMaximizeButton.title = maximized ? "Restore assistant" : "Maximize assistant";
+    aiAssistantInput.focus();
+});
+aiAssistantClearButton.addEventListener("click", () => {
+    assistantMessages = [];
+    localStorage.removeItem(ASSISTANT_STORAGE_KEY);
+    renderAssistantMessages();
+    aiAssistantInput.focus();
+});
+aiAssistantIncludeFile.addEventListener("change", () => {
+    aiAssistantQuota.textContent = aiAssistantIncludeFile.checked
+        ? "the open file will be shared with OpenAI"
+        : "file sharing is off";
+});
+aiAssistantForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void sendAssistantMessage();
+});
+aiAssistantInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    event.preventDefault();
+    void sendAssistantMessage();
+});
 window.setInterval(() => {
     if (document.querySelector("#demo-section")?.classList.contains("active")) void refreshEditorLogs(true);
 }, 5000);
@@ -2210,7 +2402,8 @@ setupForm.addEventListener("submit", (event) => {
 
 document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    if (!sceneAccountPanel.hidden) setSceneAccountOpen(false);
+    if (!aiAssistantPanel.hidden) setAssistantOpen(false);
+    else if (!sceneAccountPanel.hidden) setSceneAccountOpen(false);
     else if (setupPanel.classList.contains("open")) closeSetupPanel();
     else if (workbench.classList.contains("editor-open")) setEditorOpen(false);
     else if (workbench.classList.contains("logs-open")) setLogsOpen(false);
