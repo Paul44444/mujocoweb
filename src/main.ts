@@ -715,7 +715,7 @@ let selectedSceneAsset = -1;
 let gizmoMode: "move" | "rotate" = "move";
 let gizmoDrag: {pointerId: number; axis: number; startX: number; startY: number; position: number[]; rotation: number[]; direction: number[]} | null = null;
 const activePointers = new Map<number, {x: number; y: number}>();
-let cameraDrag: {pointerId: number; x: number; y: number} | null = null;
+let cameraDrag: {pointerId: number; x: number; y: number; mode: "orbit" | "pan"} | null = null;
 let pinchDistance: number | null = null;
 let cameraGestureMoved = false;
 let suppressSimulationClick = false;
@@ -1546,7 +1546,7 @@ function updateEngineUi(): void {
     });
     cameraHelp.textContent = usesMujoco
         ? "Drag to orbit · Scroll or pinch to zoom"
-        : "Drag to orbit · Scroll or pinch to zoom · Isaac RTX";
+        : "Left-drag to orbit · Middle-drag to pan · Scroll or pinch to zoom";
     resetCameraButton.disabled = !socket || socket.readyState !== WebSocket.OPEN;
     updateEditorEngineUi();
 }
@@ -1732,14 +1732,15 @@ async function handlePlaybackButton(): Promise<void> {
 }
 
 function beginCameraDrag(event: PointerEvent): void {
-    if (!socket || socket.readyState !== WebSocket.OPEN || event.button !== 0) return;
-    if (editorPreviewActive && pickSceneAsset(event)) { event.preventDefault(); return; }
+    const isPan = selectedSimulationEngine === "isaaclab" && event.button === 1;
+    if (!socket || socket.readyState !== WebSocket.OPEN || (event.button !== 0 && !isPan)) return;
+    if (!isPan && editorPreviewActive && pickSceneAsset(event)) { event.preventDefault(); return; }
     event.preventDefault();
     activePointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
     cameraGestureMoved = false;
     simulationImage.setPointerCapture(event.pointerId);
     if (activePointers.size === 1) {
-        cameraDrag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY};
+        cameraDrag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY, mode: isPan ? "pan" : "orbit"};
         pinchDistance = null;
     } else if (activePointers.size === 2) {
         const [first, second] = [...activePointers.values()];
@@ -1772,7 +1773,7 @@ function updateCameraDrag(event: PointerEvent): void {
     cameraDrag.y = event.clientY;
     if (Math.abs(deltaX) + Math.abs(deltaY) < 1) return;
     cameraGestureMoved = true;
-    sendSimulationCommand({type: "camera_orbit", deltaX, deltaY});
+    sendSimulationCommand({type: cameraDrag.mode === "pan" ? "camera_pan" : "camera_orbit", deltaX, deltaY});
 }
 
 function endCameraDrag(event: PointerEvent): void {
@@ -1785,7 +1786,7 @@ function endCameraDrag(event: PointerEvent): void {
     }
     if (activePointers.size === 1) {
         const [pointerId, point] = [...activePointers.entries()][0];
-        cameraDrag = {pointerId, x: point.x, y: point.y};
+        cameraDrag = {pointerId, x: point.x, y: point.y, mode: "orbit"};
         pinchDistance = null;
     } else if (activePointers.size === 0) {
         cameraDrag = null;
@@ -1974,6 +1975,9 @@ simulationImage.addEventListener("pointerdown", beginCameraDrag);
 simulationImage.addEventListener("pointermove", updateCameraDrag);
 simulationImage.addEventListener("pointerup", endCameraDrag);
 simulationImage.addEventListener("pointercancel", endCameraDrag);
+simulationImage.addEventListener("auxclick", (event) => {
+    if (event.button === 1) event.preventDefault();
+});
 simulationImage.addEventListener("lostpointercapture", (event) => {
     activePointers.delete(event.pointerId);
     if (activePointers.size === 0) {
