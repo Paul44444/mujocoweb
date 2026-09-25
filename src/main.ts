@@ -798,10 +798,12 @@ function renderSceneDraft(): void {
     sceneDraft.textContent = sceneAssets.map((item) => `${item.asset} · position ${item.position.join(", ")} · rotation ${item.rotation.join(", ")}° · scale ${item.scale.join(", ")}`).join("\n");
 }
 
-function addSceneAsset(asset: string, position = [0.05 * (sceneAssets.length + 1), 0, 0.04]): void {
+function addSceneAsset(asset: string, position = [0.05 * (sceneAssets.length + 1), 0, 0.04]) {
     const index = sceneAssets.length + 1;
-    sceneAssets.push({id: `${asset}-${index}`, asset, position, rotation: [0, 0, 0], scale: asset === "hammer" ? [1, 1, 1] : [0.04, 0.04, 0.04]});
+    const item = {id: `${asset}-${index}`, asset, position, rotation: [0, 0, 0], scale: asset === "hammer" ? [1, 1, 1] : [0.04, 0.04, 0.04]};
+    sceneAssets.push(item);
     renderSceneDraft();
+    return item;
 }
 
 function sceneUser(): string | null {
@@ -1538,8 +1540,9 @@ function updateEngineUi(): void {
     simulationEngineSelect.value = selectedSimulationEngine;
     const usesMujoco = selectedSimulationEngine === "mujoco";
     document.querySelectorAll<HTMLButtonElement>("[data-live-asset]").forEach((button) => {
-        button.disabled = !usesMujoco;
-        button.draggable = usesMujoco;
+        const supported = usesMujoco || button.dataset.liveAsset !== "hammer";
+        button.disabled = !supported;
+        button.draggable = supported;
     });
     cameraHelp.textContent = usesMujoco
         ? "Drag to orbit · Scroll or pinch to zoom"
@@ -1645,7 +1648,7 @@ function renderCameraRight(camera: RenderCamera): number[] {
 
 function renderSceneGizmo(): void {
     const asset = sceneAssets[selectedSceneAsset];
-    const center = asset && editorPreviewActive ? projectScenePoint(asset.position) : null;
+    const center = asset && editorPreviewActive && selectedSimulationEngine === "mujoco" ? projectScenePoint(asset.position) : null;
     sceneGizmo.hidden = !center;
     if (!center) return;
     sceneGizmoName.textContent = asset.id;
@@ -1910,9 +1913,9 @@ function handleTextMessage(message: string): void {
         const data = JSON.parse(message);
 
         if (data.type === "frame_metadata") {
+            if (data.render_camera) renderCamera = data.render_camera;
             if (data.editor_preview) {
                 if (data.camera) previewCamera = data.camera;
-                if (data.render_camera) renderCamera = data.render_camera;
                 renderSceneGizmo();
             }
             episodeValue.textContent = String(data.episode ?? "—");
@@ -1984,6 +1987,7 @@ document.querySelectorAll<HTMLElement>("[data-live-asset]").forEach((asset) => {
         if (!event.dataTransfer) return;
         draggedSceneAsset = asset.dataset.liveAsset ?? "box";
         event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setData("application/x-simulation-asset", draggedSceneAsset);
         event.dataTransfer.setData("application/x-mujoco-asset", draggedSceneAsset);
     });
     asset.addEventListener("dragend", () => {
@@ -2023,7 +2027,9 @@ function sceneWorldPosition(u: number, v: number, asset: string): number[] | nul
     if (distanceToTable <= 0) return null;
     const x = camera.position[0] + ray[0] * distanceToTable;
     const y = camera.position[1] + ray[1] * distanceToTable;
-    if (Math.abs(x) > 1 || Math.abs(y) > 1) return null;
+    if (selectedSimulationEngine === "isaaclab") {
+        if (x < 0.02 || x > 0.98 || Math.abs(y) > 0.45) return null;
+    } else if (Math.abs(x) > 1 || Math.abs(y) > 1) return null;
     return [Number(x.toFixed(3)), Number(y.toFixed(3)), z];
 }
 
@@ -2048,18 +2054,33 @@ function updateSceneDropPreview(event: DragEvent): void {
 function dropSceneAsset(event: DragEvent): void {
     event.preventDefault();
     sceneDropPreview.hidden = true;
-    const asset = event.dataTransfer?.getData("application/x-mujoco-asset");
-    if (!asset || !["box", "sphere", "cylinder", "hammer"].includes(asset) || !editorPreviewActive) return;
+    const asset = event.dataTransfer?.getData("application/x-simulation-asset")
+        || event.dataTransfer?.getData("application/x-mujoco-asset");
+    const supportedAssets = selectedSimulationEngine === "isaaclab"
+        ? ["box", "sphere", "cylinder"]
+        : ["box", "sphere", "cylinder", "hammer"];
+    if (!asset || !supportedAssets.includes(asset) || !editorPreviewActive) return;
     const point = sceneImagePoint(event);
     const position = point && sceneWorldPosition(point.u, point.v, asset);
     if (!position) {
         setStatus("Choose a point on the table to place the asset", "idle");
         return;
     }
-    addSceneAsset(asset, position);
+    const sceneAsset = addSceneAsset(asset, position);
     selectedSceneAsset = sceneAssets.length - 1;
     renderSceneGizmo();
-    if (editorPreviewActive && socket) {
+    if (selectedSimulationEngine === "isaaclab") {
+        sendSimulationCommand({
+            type: "scene_spawn",
+            id: sceneAsset.id,
+            asset: sceneAsset.asset,
+            position: sceneAsset.position,
+        });
+        setStatus(`${asset} added to the live Isaac scene`, "connected");
+        sceneMessage.textContent = `${asset} added with PhysX mass, gravity and collisions.`;
+        return;
+    }
+    if (socket) {
         const previous = socket;
         socket = null;
         previous.close();
@@ -2110,7 +2131,7 @@ function finishGizmoDrag(event: PointerEvent): void {
 sceneGizmoAxes.addEventListener("pointerup", finishGizmoDrag);
 sceneGizmoAxes.addEventListener("pointercancel", finishGizmoDrag);
 simulationWindow.addEventListener("dragover", (event) => {
-    if (event.dataTransfer?.types.includes("application/x-mujoco-asset")) {
+    if (event.dataTransfer?.types.includes("application/x-simulation-asset") || event.dataTransfer?.types.includes("application/x-mujoco-asset")) {
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
         updateSceneDropPreview(event);
