@@ -113,6 +113,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
           <div class="controls">
             <span id="statusIndicator" class="status-indicator"></span>
+            <select id="simulationEngineSelect" class="engine-select" aria-label="Simulation engine">
+              <option value="isaaclab">NVIDIA Isaac Lab</option>
+              <option value="mujoco">MuJoCo · DAPG</option>
+            </select>
             <button id="sceneAccountButton" class="setup-button" type="button" aria-controls="sceneAccountPanel" aria-expanded="false">
               <span aria-hidden="true">◎</span><span id="sceneAccountLabel">User: Guest</span>
             </button>
@@ -169,7 +173,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           </div>
 
           <div class="camera-controls" aria-label="Camera controls">
-            <span>Drag to orbit · Scroll or pinch to zoom</span>
+            <span id="cameraHelp">Drag to orbit · Scroll or pinch to zoom</span>
             <button id="resetCameraButton" type="button" disabled>Reset view</button>
           </div>
         </div>
@@ -603,6 +607,8 @@ const statusText =
 
 const statusIndicator =
     document.querySelector<HTMLSpanElement>("#statusIndicator")!;
+const simulationEngineSelect = document.querySelector<HTMLSelectElement>("#simulationEngineSelect")!;
+const cameraHelp = document.querySelector<HTMLElement>("#cameraHelp")!;
 
 const episodeValue =
     document.querySelector<HTMLElement>("#episodeValue")!;
@@ -710,8 +716,11 @@ let cameraDrag: {pointerId: number; x: number; y: number} | null = null;
 let pinchDistance: number | null = null;
 let cameraGestureMoved = false;
 let suppressSimulationClick = false;
+type SimulationEngine = "isaaclab" | "mujoco";
+let selectedSimulationEngine: SimulationEngine = "isaaclab";
 
 const defaultConfiguration = {
+    engine: "isaaclab" as SimulationEngine,
     taskId: "relocate",
     robotFile: "relocate_clean.xml",
     policyFile: "policy_paul.pkl",
@@ -1434,14 +1443,19 @@ function applyConfiguration(): void {
     robotFileDisplay.textContent = robotFile;
     policyFileDisplay.textContent = policyFile;
     const task = taskCatalog[selectedTaskId];
-    configurationSummary.textContent = `${task.name} · ${policyFile}`;
-    if (generatedObject && selectedTaskId === "relocate") {
+    configurationSummary.textContent = selectedSimulationEngine === "isaaclab"
+        ? "NVIDIA Isaac Lab · Franka Cube Lift · GPU PhysX + RTX"
+        : `${task.name} · ${policyFile}`;
+    if (selectedSimulationEngine === "mujoco" && generatedObject && selectedTaskId === "relocate") {
         configurationSummary.textContent = `${task.name} · ${generatedObject.name}`;
     }
-    interactionHint.textContent = task.interactive
-        ? "Click on the simulation window to set target positions for the robotic hand"
-        : `${task.name} runs autonomously with its trained DAPG policy`;
+    interactionHint.textContent = selectedSimulationEngine === "isaaclab"
+        ? "Isaac Lab GPU preview · scripted Franka motion; trained-policy playback comes next"
+        : task.interactive
+            ? "Click on the simulation window to set target positions for the robotic hand"
+            : `${task.name} runs autonomously with its trained DAPG policy`;
     localStorage.setItem("mujocoweb-configuration", JSON.stringify({
+        engine: selectedSimulationEngine,
         taskId: selectedTaskId,
         robotFile,
         policyFile,
@@ -1486,10 +1500,24 @@ function resetConfiguration(): void {
     populateTask("relocate");
 }
 
+function updateEngineUi(): void {
+    simulationEngineSelect.value = selectedSimulationEngine;
+    const usesMujoco = selectedSimulationEngine === "mujoco";
+    document.querySelectorAll<HTMLButtonElement>("[data-live-asset]").forEach((button) => {
+        button.disabled = !usesMujoco;
+        button.draggable = usesMujoco;
+    });
+    cameraHelp.textContent = usesMujoco
+        ? "Drag to orbit · Scroll or pinch to zoom"
+        : "Isaac Lab RTX camera · interactive orbit follows in the next step";
+    resetCameraButton.disabled = !usesMujoco;
+}
+
 try {
     const storedConfiguration = localStorage.getItem("mujocoweb-configuration");
     if (storedConfiguration) {
         const parsed = JSON.parse(storedConfiguration) as Partial<typeof defaultConfiguration> & {generatedObject?: GeneratedObject};
+        selectedSimulationEngine = parsed.engine === "mujoco" ? "mujoco" : "isaaclab";
         const storedTask = parsed.taskId && parsed.taskId in taskCatalog
             ? parsed.taskId as TaskId
             : "relocate";
@@ -1503,6 +1531,8 @@ try {
 } catch {
     localStorage.removeItem("mujocoweb-configuration");
 }
+updateEngineUi();
+applyConfiguration();
 
 function setStatus(
     text: string,
@@ -1517,7 +1547,7 @@ function handleSimulationClick(event: MouseEvent): void {
         suppressSimulationClick = false;
         return;
     }
-    if (editorPreviewActive) return;
+    if (editorPreviewActive || selectedSimulationEngine !== "mujoco") return;
     if (!taskCatalog[selectedTaskId].interactive) {
         return;
     }
@@ -1664,7 +1694,7 @@ async function handlePlaybackButton(): Promise<void> {
 }
 
 function beginCameraDrag(event: PointerEvent): void {
-    if (!socket || socket.readyState !== WebSocket.OPEN || event.button !== 0) return;
+    if (selectedSimulationEngine !== "mujoco" || !socket || socket.readyState !== WebSocket.OPEN || event.button !== 0) return;
     if (editorPreviewActive && pickSceneAsset(event)) { event.preventDefault(); return; }
     event.preventDefault();
     activePointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
@@ -1727,7 +1757,7 @@ function endCameraDrag(event: PointerEvent): void {
 }
 
 function zoomCamera(event: WheelEvent): void {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (selectedSimulationEngine !== "mujoco" || !socket || socket.readyState !== WebSocket.OPEN) return;
     event.preventDefault();
     sendSimulationCommand({type: "camera_zoom", delta: Math.sign(event.deltaY)});
 }
@@ -1745,19 +1775,20 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
     startButton.disabled = true;
 
     const websocketUrl = backendWebSocketUrl("/ws/simulation");
+    websocketUrl.searchParams.set("engine", selectedSimulationEngine);
     // The scene editor currently builds XML from DAPG_relocate.xml. A run
     // launched from that editor must therefore use the matching Relocate task,
     // even if the Experiment setup was previously set to another task.
     websocketUrl.searchParams.set("task", editorPreview || runEditedScene ? "relocate" : selectedTaskId);
-    if (editorPreview || runEditedScene) {
+    if (selectedSimulationEngine === "mujoco" && (editorPreview || runEditedScene)) {
         // The editor preview and a run started from it share the same asset list.
         // Only the former remains in static editing mode.
         websocketUrl.searchParams.set("scene", JSON.stringify(sceneAssets));
     }
-    if (editorPreview) {
+    if (selectedSimulationEngine === "mujoco" && editorPreview) {
         websocketUrl.searchParams.set("editor", "1");
         if (previewCamera) websocketUrl.searchParams.set("camera", JSON.stringify(previewCamera));
-    } else if (generatedObject && selectedTaskId === "relocate") {
+    } else if (selectedSimulationEngine === "mujoco" && generatedObject && selectedTaskId === "relocate") {
         websocketUrl.searchParams.set("object", JSON.stringify(generatedObject));
     }
 
@@ -1779,7 +1810,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         setStatus("Connected", "connected");
         startButton.disabled = false;
         updatePlaybackButton();
-        resetCameraButton.disabled = false;
+        resetCameraButton.disabled = selectedSimulationEngine !== "mujoco";
     };
 
     connection.onerror = (event) => {
@@ -1806,12 +1837,17 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
 
         if (!connectionOpened && !fallbackAttempt && backendUrl !== RENDER_BACKEND_URL) {
             backendUrl = RENDER_BACKEND_URL;
+            if (selectedSimulationEngine === "isaaclab") {
+                selectedSimulationEngine = "mujoco";
+                updateEngineUi();
+                applyConfiguration();
+            }
             setStatus("GPU backend unavailable — connecting to Render…", "connecting");
             connectToSimulation(true, editorPreview, runEditedScene);
             return;
         }
 
-        if (editorPreview) {
+        if (editorPreview && selectedSimulationEngine === "mujoco") {
             setStatus("Editor scene ready — drag assets in, then start simulation", "idle");
         } else if (statusText.textContent !== "Simulation finished") {
             setStatus(
@@ -2051,6 +2087,13 @@ simulationWindow.addEventListener("dragleave", (event) => {
 simulationWindow.addEventListener("drop", dropSceneAsset);
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
+simulationEngineSelect.addEventListener("change", () => {
+    selectedSimulationEngine = simulationEngineSelect.value === "mujoco" ? "mujoco" : "isaaclab";
+    resetSimulationForConfiguration();
+    updateEngineUi();
+    applyConfiguration();
+    window.setTimeout(() => connectToSimulation(false, true), 180);
+});
 sceneAccountButton.addEventListener("click", () => {
     const opening = sceneAccountPanel.hasAttribute("hidden");
     setSceneAccountOpen(opening);

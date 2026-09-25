@@ -350,7 +350,8 @@ h1 {
 }
 
 .scene-toolbar-select,
-.scene-toolbar-name {
+.scene-toolbar-name,
+.engine-select {
     height: 39px;
     border: 1px solid #3f3f46;
     border-radius: 9px;
@@ -363,8 +364,10 @@ h1 {
 
 .scene-toolbar-select { width: 145px; padding: 0 28px 0 9px; }
 .scene-toolbar-name { width: 145px; padding: 0 9px; }
+.engine-select { width: 154px; padding: 0 28px 0 9px; border-color: rgba(118, 185, 0, 0.42); }
 .scene-toolbar-select:focus,
-.scene-toolbar-name:focus { border-color: rgba(118, 185, 0, 0.7); }
+.scene-toolbar-name:focus,
+.engine-select:focus { border-color: rgba(118, 185, 0, 0.7); }
 .scene-toolbar-button { padding: 9px 10px; font-size: 0.78rem; }
 
 .setup-button {
@@ -530,6 +533,12 @@ h1 {
     color: #d9f99d;
     cursor: grab;
     font-size: 0.75rem;
+}
+
+.live-asset-bar button:disabled {
+    cursor: not-allowed;
+    filter: grayscale(1);
+    opacity: 0.38;
 }
 
 .live-asset-bar small { color: #71717a; white-space: nowrap; }
