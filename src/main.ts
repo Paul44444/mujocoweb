@@ -93,13 +93,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               <button id="editorLogsRefreshButton" class="secondary-button" type="button" aria-label="Refresh backend logs">↻</button>
             </div>
           </div>
-          <div class="workbench-log-auth">
-            <label class="field-label" for="editorPassword">Editor password</label>
-            <input id="editorPassword" class="setup-input" type="password" autocomplete="off" placeholder="Unlock logs and code" />
-            <button id="editorConnectButton" class="secondary-button" type="button">Unlock</button>
-          </div>
           <p id="editorLogsMessage" class="generator-message" aria-live="polite"></p>
-          <pre id="editorLogsOutput" class="editor-logs-output" aria-label="Backend logs">Enter the editor password to see live logs.</pre>
+          <pre id="editorLogsOutput" class="editor-logs-output" aria-label="Backend logs">Loading public simulation logs…</pre>
           <p class="workbench-log-caption">Last 2,000 lines · refreshes every 5 seconds</p>
         </aside>
 
@@ -555,17 +550,24 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <section id="codeEditorDialog" class="code-editor-dialog" aria-labelledby="codeEditorTitle">
       <header class="code-editor-header">
         <div>
-          <p class="panel-eyebrow">Advanced · authenticated</p>
+          <p class="panel-eyebrow">Advanced · public source browser</p>
           <h2 id="codeEditorTitle">Simulation source editor</h2>
           <p id="codeEditorSubtitle">Changes to Python run on the backend computer. A syntax check is not a security check.</p>
         </div>
         <button id="closeCodeEditorButton" class="secondary-button" type="button" aria-label="Return to simulation">← Simulation</button>
       </header>
       <div class="code-editor-body">
+        <div class="editor-owner-bar">
+          <span><strong>Public read-only mode</strong> · browsing source files needs no password.</span>
+          <div>
+            <input id="editorPassword" class="setup-input" type="password" autocomplete="off" placeholder="Owner password for editing" aria-label="Owner password" />
+            <button id="editorConnectButton" class="secondary-button" type="button">Enable owner editing</button>
+          </div>
+        </div>
         <div class="editor-workspace">
           <aside class="repository-explorer" aria-label="Repository explorer">
             <div class="repository-explorer-header"><span>Explorer</span><button id="editorTreeReloadButton" class="secondary-button" type="button" disabled aria-label="Reload repository tree">↻</button></div>
-            <div id="editorTree" class="editor-tree" tabindex="0" aria-live="polite">Unlock the editor to browse source files.</div>
+            <div id="editorTree" class="editor-tree" tabindex="0" aria-live="polite">Loading public source tree…</div>
           </aside>
           <div class="editor-document">
             <div class="code-editor-toolbar">
@@ -1040,6 +1042,7 @@ function createCodeEditor(content: string, position = 0): void {
                 python(),
                 syntaxHighlighting(defaultHighlightStyle),
                 EditorView.lineWrapping,
+                EditorView.editable.of(Boolean(editorToken)),
                 EditorView.domEventHandlers({
                     mousedown: (event, view) => {
                         if (!(event.ctrlKey || event.metaKey)) return false;
@@ -1062,12 +1065,11 @@ async function editorRequest<T>(path: string, options: RequestInit = {}): Promis
     await refreshPublishedBackendUrl();
     const editorUrl = new URL(backendHttpUrl(`/api/editor${path}`));
     editorUrl.searchParams.set("engine", selectedSimulationEngine);
+    const headers: Record<string, string> = options.body ? {"Content-Type": "application/json"} : {};
+    if (editorToken) headers.Authorization = `Bearer ${editorToken}`;
     const response = await fetch(editorUrl, {
         ...options,
-        headers: {
-            "Authorization": `Bearer ${editorToken}`,
-            ...(options.body ? {"Content-Type": "application/json"} : {}),
-        },
+        headers,
     });
     if (!response.ok) {
         let message = `Editor request failed (${response.status}).`;
@@ -1107,7 +1109,8 @@ function updateEditorEngineUi(): void {
     editorSaveButton.disabled = true;
     editorRevisionSelect.disabled = true;
     editorRestoreButton.disabled = true;
-    if (editorToken) void loadEditorTree();
+    void loadEditorTree();
+    void refreshEditorLogs();
 }
 
 async function connectEditor(): Promise<void> {
@@ -1117,19 +1120,18 @@ async function connectEditor(): Promise<void> {
         return;
     }
     editorConnectButton.disabled = true;
-    editorStatus("Connecting to the editor…");
+    editorStatus("Enabling owner editing…");
     try {
-        await loadEditorTree();
-        editorStatus("Connected. Choose a source file in the explorer.");
-        editorLogsMessage.textContent = "";
-        void refreshEditorLogs();
+        await editorRequest<{authenticated: boolean}>("/auth");
+        editorConnectButton.textContent = "Owner editing enabled";
+        editorPassword.disabled = true;
+        editorStatus("Owner editing enabled. Saved changes will run on the backend computer.");
+        if (editorFileId) await loadEditorFile(currentEditorLocation()?.position ?? 0);
     } catch (error) {
         editorToken = "";
-        const message = error instanceof Error ? error.message : "Could not connect to editor.";
-        editorStatus(message);
-        editorLogsMessage.textContent = message;
+        editorStatus(error instanceof Error ? error.message : "Could not enable owner editing.");
     } finally {
-        editorConnectButton.disabled = false;
+        if (!editorToken) editorConnectButton.disabled = false;
     }
 }
 
@@ -1180,7 +1182,7 @@ async function loadEditorTree(): Promise<void> {
 
 async function loadEditorFile(position = 0): Promise<void> {
     const fileId = editorFileId;
-    if (!fileId || !editorToken) return;
+    if (!fileId) return;
     editorStatus("Loading source file…");
     try {
         const file = await editorRequest<EditorDocument>(`/files/${encodeURIComponent(fileId)}`);
@@ -1197,17 +1199,19 @@ async function loadEditorFile(position = 0): Promise<void> {
             option.textContent = revision === "original" ? "Original before browser edits" : revision;
             return option;
         }));
-        editorSaveButton.disabled = false;
-        editorRevisionSelect.disabled = file.revisions.length === 0;
-        editorRestoreButton.disabled = file.revisions.length === 0;
-        editorStatus("Loaded. Saving creates a backup and applies the change to the relevant runtime.");
+        editorSaveButton.disabled = !editorToken;
+        editorRevisionSelect.disabled = !editorToken || file.revisions.length === 0;
+        editorRestoreButton.disabled = !editorToken || file.revisions.length === 0;
+        editorStatus(editorToken
+            ? "Owner editing enabled. Saving creates a backup and applies the change to the relevant runtime."
+            : "Public read-only view. No password is needed to browse the source.");
     } catch (error) {
         editorStatus(error instanceof Error ? error.message : "Could not load source file.");
     }
 }
 
 async function goToDefinition(symbol: string): Promise<void> {
-    if (!editorFileId || !editorToken || !/^[A-Za-z_]\w*$/.test(symbol)) return;
+    if (!editorFileId || !/^[A-Za-z_]\w*$/.test(symbol)) return;
     editorStatus(`Finding definition of ${symbol}…`);
     try {
         const result = await editorRequest<{id: string; line: number}>(`/definitions?file_id=${encodeURIComponent(editorFileId)}&symbol=${encodeURIComponent(symbol)}`);
@@ -1287,10 +1291,6 @@ function hasLogTextSelection(): boolean {
 
 async function refreshEditorLogs(preserveSelection = false): Promise<void> {
     if (editorLogsLoading) return;
-    if (!editorToken) {
-        editorLogsMessage.textContent = "Connect with the editor password to view logs.";
-        return;
-    }
     if (preserveSelection && hasLogTextSelection()) {
         editorLogsMessage.textContent = "Auto-refresh paused while text is selected.";
         return;
@@ -1322,8 +1322,7 @@ function setEditorOpen(open: boolean): void {
     codeEditorDialog.inert = !open;
     codeEditorDialog.setAttribute("aria-hidden", String(!open));
     if (open) {
-        if (!editorToken) editorPassword.focus();
-        else editorTree.focus();
+        editorTree.focus();
     } else {
         codeEditorButton.focus();
     }
@@ -1370,7 +1369,7 @@ editorLogsPanel.addEventListener("click", (event) => {
 editorBackButton.addEventListener("click", () => void moveEditorHistory(editorBackHistory, editorForwardHistory));
 editorForwardButton.addEventListener("click", () => void moveEditorHistory(editorForwardHistory, editorBackHistory));
 window.setInterval(() => {
-    if (editorToken && document.querySelector("#demo-section")?.classList.contains("active")) void refreshEditorLogs(true);
+    if (document.querySelector("#demo-section")?.classList.contains("active")) void refreshEditorLogs(true);
 }, 5000);
 
 function showGeneratedObject(): void {
@@ -2235,6 +2234,7 @@ window.addEventListener("beforeunload", () => {
 window.addEventListener("load", () => {
     void (async () => {
         await refreshPublishedBackendUrl();
+        await refreshEditorLogs();
         await loadSceneList(false);
         if (!simulationImage.classList.contains("visible") && !socket) connectToSimulation(false, true);
     })();
