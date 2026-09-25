@@ -347,6 +347,17 @@ h1 {
     cursor: pointer;
 }
 
+.ai-assistant-submit-actions {
+    display: grid;
+    gap: 6px;
+}
+
+.ai-assistant-form .ai-scene-button {
+    border: 1px solid rgba(163, 230, 53, 0.5);
+    background: #26330f;
+    color: #d9f99d;
+}
+
 .ai-assistant-form button:disabled {
     opacity: 0.62;
     cursor: wait;
@@ -357,6 +368,57 @@ h1 {
     color: #71717a;
     font-size: 0.65rem;
     line-height: 1.35;
+}
+
+.ai-scene-proposal {
+    margin: 4px 0 14px;
+    padding: 13px;
+    border: 1px solid rgba(132, 204, 22, 0.55);
+    border-radius: 12px;
+    background: linear-gradient(145deg, rgba(54, 83, 20, 0.32), rgba(24, 24, 27, 0.94));
+}
+
+.ai-scene-proposal > strong {
+    color: #d9f99d;
+    font-size: 0.9rem;
+}
+
+.ai-scene-proposal p {
+    margin: 6px 0;
+    color: #d4d4d8;
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+.ai-scene-proposal .ai-scene-assets {
+    color: #a3e635;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.ai-scene-proposal .ai-scene-warning {
+    color: #fbbf24;
+}
+
+.ai-scene-proposal > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.ai-scene-proposal button {
+    padding: 8px 10px;
+    border: 1px solid #65a30d;
+    border-radius: 8px;
+    background: #84cc16;
+    color: #111;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.ai-scene-proposal button:first-child {
+    background: #27272a;
+    color: #d9f99d;
 }
 
 .workbench.editor-open {

@@ -179,6 +179,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <button type="button" draggable="true" data-live-asset="sphere">● Sphere</button>
           <button type="button" draggable="true" data-live-asset="cylinder">▯ Cylinder</button>
           <button type="button" draggable="true" data-live-asset="hammer">⚒ Hammer</button>
+          <button type="button" draggable="true" data-live-asset="kuka_allegro">KUKA Robot</button>
           <small>Drag into scene</small>
         </div>
 
@@ -485,6 +486,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <button type="button" data-scene-asset="sphere">● Sphere</button>
             <button type="button" data-scene-asset="cylinder">▯ Cylinder</button>
             <button type="button" data-scene-asset="hammer">⚒ Hammer</button>
+            <button type="button" data-scene-asset="kuka_allegro">KUKA Robot</button>
           </div>
           <div id="sceneDraft" class="scene-draft">Start with the DAPG Relocate cube, or add an asset above.</div>
         </details>
@@ -611,7 +613,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <form id="aiAssistantForm" class="ai-assistant-form">
       <label class="sr-only" for="aiAssistantInput">Message to the AI assistant</label>
       <textarea id="aiAssistantInput" rows="2" maxlength="4000" placeholder="Ask about the simulation or the open source file…"></textarea>
-      <button id="aiAssistantSendButton" type="submit">Send</button>
+      <div class="ai-assistant-submit-actions">
+        <button id="aiAssistantSceneButton" class="ai-scene-button" type="button">Build scene</button>
+        <button id="aiAssistantSendButton" type="submit">Send</button>
+      </div>
     </form>
     <p class="ai-assistant-note">Safety-checked and rate-limited · <span id="aiAssistantQuota">file sharing is off</span>. The assistant never saves or executes code automatically.</p>
   </aside>
@@ -728,6 +733,7 @@ const aiAssistantMessages = document.querySelector<HTMLElement>("#aiAssistantMes
 const aiAssistantForm = document.querySelector<HTMLFormElement>("#aiAssistantForm")!;
 const aiAssistantInput = document.querySelector<HTMLTextAreaElement>("#aiAssistantInput")!;
 const aiAssistantSendButton = document.querySelector<HTMLButtonElement>("#aiAssistantSendButton")!;
+const aiAssistantSceneButton = document.querySelector<HTMLButtonElement>("#aiAssistantSceneButton")!;
 const aiAssistantClearButton = document.querySelector<HTMLButtonElement>("#aiAssistantClearButton")!;
 const aiAssistantMaximizeButton = document.querySelector<HTMLButtonElement>("#aiAssistantMaximizeButton")!;
 const aiAssistantMinimizeButton = document.querySelector<HTMLButtonElement>("#aiAssistantMinimizeButton")!;
@@ -819,9 +825,18 @@ type GeneratedObject = {
     parts: ObjectPart[];
     generator?: string;
 };
+type SceneAsset = {
+    id: string;
+    asset: "box" | "sphere" | "cylinder" | "hammer" | "kuka_allegro";
+    position: number[];
+    rotation: number[];
+    scale: number[];
+    color: number[];
+};
+type SceneProposal = {name: string; summary: string; assets: SceneAsset[]; warnings: string[]};
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
-const sceneAssets: {id: string; asset: string; position: number[]; rotation: number[]; scale: number[]}[] = [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03]}];
+const sceneAssets: SceneAsset[] = [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}];
 sceneUserInput.value = localStorage.getItem("mujocoweb-scene-user") || "Guest";
 sceneAccountLabel.textContent = `User: ${sceneUserInput.value}`;
 
@@ -835,12 +850,20 @@ function setSceneAccountOpen(open: boolean): void {
 }
 
 function renderSceneDraft(): void {
-    sceneDraft.textContent = sceneAssets.map((item) => `${item.asset} · position ${item.position.join(", ")} · rotation ${item.rotation.join(", ")}° · scale ${item.scale.join(", ")}`).join("\n");
+    sceneDraft.textContent = sceneAssets.map((item) => `${item.asset} · position ${item.position.join(", ")} · rotation ${item.rotation.join(", ")}° · scale ${item.scale.join(", ")} · color ${item.color.join(", ")}`).join("\n");
 }
 
 function addSceneAsset(asset: string, position = [0.05 * (sceneAssets.length + 1), 0, 0.04]) {
     const index = sceneAssets.length + 1;
-    const item = {id: `${asset}-${index}`, asset, position, rotation: [0, 0, 0], scale: asset === "hammer" ? [1, 1, 1] : [0.04, 0.04, 0.04]};
+    const supportedAsset = (["box", "sphere", "cylinder", "hammer", "kuka_allegro"].includes(asset) ? asset : "box") as SceneAsset["asset"];
+    const item: SceneAsset = {
+        id: `${supportedAsset}-${index}`,
+        asset: supportedAsset,
+        position: supportedAsset === "kuka_allegro" ? [-0.35, 0, 0] : position,
+        rotation: [0, 0, 0],
+        scale: ["hammer", "kuka_allegro"].includes(supportedAsset) ? [1, 1, 1] : [0.04, 0.04, 0.04],
+        color: supportedAsset === "sphere" ? [0.95, 0.35, 0.18] : supportedAsset === "cylinder" ? [0.35, 0.8, 0.35] : [0.15, 0.55, 0.95],
+    };
     sceneAssets.push(item);
     renderSceneDraft();
     return item;
@@ -1058,6 +1081,7 @@ type AssistantMessage = {role: "user" | "assistant"; content: string};
 const ASSISTANT_STORAGE_KEY = "mujocoweb-ai-assistant-history";
 let assistantMessages: AssistantMessage[] = [];
 let assistantRequestPending = false;
+let pendingSceneProposal: SceneProposal | null = null;
 
 try {
     const storedMessages = JSON.parse(localStorage.getItem(ASSISTANT_STORAGE_KEY) || "[]") as unknown;
@@ -1098,6 +1122,36 @@ function renderAssistantMessages(): void {
         article.append(label, body);
         aiAssistantMessages.append(article);
     }
+    if (pendingSceneProposal) {
+        const proposal = document.createElement("section");
+        proposal.className = "ai-scene-proposal";
+        const title = document.createElement("strong");
+        title.textContent = pendingSceneProposal.name;
+        const summary = document.createElement("p");
+        summary.textContent = pendingSceneProposal.summary;
+        const assetList = document.createElement("p");
+        assetList.className = "ai-scene-assets";
+        assetList.textContent = pendingSceneProposal.assets.map((asset) => asset.asset === "kuka_allegro" ? "KUKA LBR iiwa + Allegro" : asset.asset).join(" · ");
+        proposal.append(title, summary, assetList);
+        for (const warning of pendingSceneProposal.warnings) {
+            const warningLine = document.createElement("p");
+            warningLine.className = "ai-scene-warning";
+            warningLine.textContent = `Note: ${warning}`;
+            proposal.append(warningLine);
+        }
+        const actions = document.createElement("div");
+        const applyButton = document.createElement("button");
+        applyButton.type = "button";
+        applyButton.textContent = "Apply scene";
+        applyButton.addEventListener("click", () => void applyAssistantScene(false));
+        const saveButton = document.createElement("button");
+        saveButton.type = "button";
+        saveButton.textContent = "Apply & save";
+        saveButton.addEventListener("click", () => void applyAssistantScene(true));
+        actions.append(applyButton, saveButton);
+        proposal.append(actions);
+        aiAssistantMessages.append(proposal);
+    }
     aiAssistantMessages.scrollTop = aiAssistantMessages.scrollHeight;
 }
 
@@ -1130,6 +1184,7 @@ async function sendAssistantMessage(): Promise<void> {
     aiAssistantInput.value = "";
     assistantRequestPending = true;
     aiAssistantSendButton.disabled = true;
+    aiAssistantSceneButton.disabled = true;
     aiAssistantSendButton.textContent = "Thinking…";
     const thinking = document.createElement("article");
     thinking.className = "ai-message assistant thinking";
@@ -1170,7 +1225,87 @@ async function sendAssistantMessage(): Promise<void> {
     } finally {
         assistantRequestPending = false;
         aiAssistantSendButton.disabled = false;
+        aiAssistantSceneButton.disabled = false;
         aiAssistantSendButton.textContent = "Send";
+        persistAssistantMessages();
+        aiAssistantInput.focus();
+    }
+}
+
+async function applyAssistantScene(saveAfter: boolean): Promise<void> {
+    const proposal = pendingSceneProposal;
+    if (!proposal) return;
+    sceneAssets.splice(0, sceneAssets.length, ...proposal.assets.map((asset) => ({
+        ...asset,
+        position: [...asset.position],
+        rotation: [...asset.rotation],
+        scale: [...asset.scale],
+        color: [...asset.color],
+    })));
+    sceneNameInput.value = proposal.name;
+    selectedSceneAsset = -1;
+    pendingSceneProposal = null;
+    renderSceneDraft();
+    renderSceneGizmo();
+    reconnectSceneEditor();
+    assistantMessages.push({
+        role: "assistant",
+        content: `${proposal.name} is now active in the scene editor.${saveAfter ? " Saving it to the current user…" : " Use Save whenever you want to keep it."}`,
+    });
+    persistAssistantMessages();
+    if (saveAfter) await saveScene();
+}
+
+async function buildAssistantScene(): Promise<void> {
+    const prompt = aiAssistantInput.value.trim();
+    if (prompt.length < 3 || assistantRequestPending) return;
+    assistantMessages.push({role: "user", content: prompt});
+    pendingSceneProposal = null;
+    persistAssistantMessages();
+    aiAssistantInput.value = "";
+    assistantRequestPending = true;
+    aiAssistantSendButton.disabled = true;
+    aiAssistantSceneButton.disabled = true;
+    aiAssistantSceneButton.textContent = "Building…";
+    const thinking = document.createElement("article");
+    thinking.className = "ai-message assistant thinking";
+    thinking.textContent = "AI is arranging the scene…";
+    aiAssistantMessages.append(thinking);
+    aiAssistantMessages.scrollTop = aiAssistantMessages.scrollHeight;
+    try {
+        await refreshPublishedBackendUrl();
+        const response = await fetch(backendHttpUrl("/api/assistant/scene"), {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({prompt, engine: selectedSimulationEngine, current_assets: sceneAssets}),
+        });
+        if (!response.ok) {
+            let message = `Scene builder request failed (${response.status}).`;
+            try {
+                const error = await response.json() as {detail?: string};
+                if (error.detail) message = error.detail;
+            } catch { /* Keep the status message. */ }
+            throw new Error(message);
+        }
+        const result = await response.json() as {scene: SceneProposal; quota?: {day_remaining: number; month_remaining: number}};
+        pendingSceneProposal = result.scene;
+        assistantMessages.push({
+            role: "assistant",
+            content: `Scene proposal ready: ${result.scene.summary}`,
+        });
+        if (result.quota) {
+            aiAssistantQuota.textContent = `${result.quota.day_remaining} public requests left today · ${result.quota.month_remaining} this month`;
+        }
+    } catch (error) {
+        assistantMessages.push({
+            role: "assistant",
+            content: error instanceof Error ? `I could not build the scene: ${error.message}` : "I could not reach the scene builder.",
+        });
+    } finally {
+        assistantRequestPending = false;
+        aiAssistantSendButton.disabled = false;
+        aiAssistantSceneButton.disabled = false;
+        aiAssistantSceneButton.textContent = "Build scene";
         persistAssistantMessages();
         aiAssistantInput.focus();
     }
@@ -1542,10 +1677,12 @@ aiAssistantMaximizeButton.addEventListener("click", () => {
 });
 aiAssistantClearButton.addEventListener("click", () => {
     assistantMessages = [];
+    pendingSceneProposal = null;
     localStorage.removeItem(ASSISTANT_STORAGE_KEY);
     renderAssistantMessages();
     aiAssistantInput.focus();
 });
+aiAssistantSceneButton.addEventListener("click", () => void buildAssistantScene());
 aiAssistantIncludeFile.addEventListener("change", () => {
     aiAssistantQuota.textContent = aiAssistantIncludeFile.checked
         ? "the open file will be shared with OpenAI"
@@ -1730,10 +1867,13 @@ function resetConfiguration(): void {
 function updateEngineUi(): void {
     simulationEngineSelect.value = selectedSimulationEngine;
     const usesMujoco = selectedSimulationEngine === "mujoco";
-    document.querySelectorAll<HTMLButtonElement>("[data-live-asset]").forEach((button) => {
-        const supported = usesMujoco || button.dataset.liveAsset !== "hammer";
+    document.querySelectorAll<HTMLButtonElement>("[data-live-asset], [data-scene-asset]").forEach((button) => {
+        const asset = button.dataset.liveAsset ?? button.dataset.sceneAsset ?? "box";
+        const supported = usesMujoco
+            ? ["box", "sphere", "cylinder", "hammer"].includes(asset)
+            : ["box", "sphere", "cylinder", "kuka_allegro"].includes(asset);
         button.disabled = !supported;
-        button.draggable = supported;
+        if (button.dataset.liveAsset) button.draggable = supported;
     });
     cameraHelp.textContent = usesMujoco
         ? "Drag to orbit · Scroll or pinch to zoom"
@@ -2041,6 +2181,9 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         startButton.disabled = false;
         updatePlaybackButton();
         resetCameraButton.disabled = false;
+        if (selectedSimulationEngine === "isaaclab") {
+            sendSimulationCommand({type: "scene_replace", assets: sceneAssets});
+        }
     };
 
     connection.onerror = (event) => {
@@ -2217,13 +2360,15 @@ function sceneWorldPosition(u: number, v: number, asset: string): number[] | nul
     const imageY = camera.bottom + (1 - v) * (camera.top - camera.bottom);
     const ray = camera.forward.map((value, index) => value * camera.near + right[index] * imageX + camera.up[index] * imageY);
     if (Math.abs(ray[2]) < 1e-6) return null;
-    const z = asset === "hammer" ? 0.08 : 0.04;
+    const z = asset === "kuka_allegro" ? 0.0 : asset === "hammer" ? 0.08 : 0.04;
     const distanceToTable = (z - camera.position[2]) / ray[2];
     if (distanceToTable <= 0) return null;
     const x = camera.position[0] + ray[0] * distanceToTable;
     const y = camera.position[1] + ray[1] * distanceToTable;
     if (selectedSimulationEngine === "isaaclab") {
-        if (x < 0.02 || x > 0.98 || Math.abs(y) > 0.45) return null;
+        if (asset === "kuka_allegro") {
+            if (x < -1 || x > 1.25 || Math.abs(y) > 1) return null;
+        } else if (x < 0.02 || x > 0.98 || Math.abs(y) > 0.45) return null;
     } else if (Math.abs(x) > 1 || Math.abs(y) > 1) return null;
     return [Number(x.toFixed(3)), Number(y.toFixed(3)), z];
 }
@@ -2240,7 +2385,7 @@ function updateSceneDropPreview(event: DragEvent): void {
     sceneDropPreview.style.left = `${point.x}px`;
     sceneDropPreview.style.top = `${point.y}px`;
     sceneDropPreview.classList.toggle("invalid", !position);
-    sceneDropShape.textContent = {box: "▣", sphere: "●", cylinder: "▯", hammer: "⚒"}[asset] ?? "▣";
+    sceneDropShape.textContent = {box: "▣", sphere: "●", cylinder: "▯", hammer: "⚒", kuka_allegro: "K"}[asset] ?? "▣";
     sceneDropLabel.textContent = position
         ? `${asset} · x ${position[0]}, y ${position[1]} · release to place`
         : "Move over the table to place";
@@ -2252,7 +2397,7 @@ function dropSceneAsset(event: DragEvent): void {
     const asset = event.dataTransfer?.getData("application/x-simulation-asset")
         || event.dataTransfer?.getData("application/x-mujoco-asset");
     const supportedAssets = selectedSimulationEngine === "isaaclab"
-        ? ["box", "sphere", "cylinder"]
+        ? ["box", "sphere", "cylinder", "kuka_allegro"]
         : ["box", "sphere", "cylinder", "hammer"];
     if (!asset || !supportedAssets.includes(asset) || !editorPreviewActive) return;
     const point = sceneImagePoint(event);
@@ -2270,6 +2415,9 @@ function dropSceneAsset(event: DragEvent): void {
             id: sceneAsset.id,
             asset: sceneAsset.asset,
             position: sceneAsset.position,
+            rotation: sceneAsset.rotation,
+            scale: sceneAsset.scale,
+            color: sceneAsset.color,
         });
         setStatus(`${asset} added to the live Isaac scene`, "connected");
         sceneMessage.textContent = `${asset} added with PhysX mass, gravity and collisions.`;
