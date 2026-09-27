@@ -845,7 +845,11 @@ type SceneAsset = {
 type SceneProposal = {name: string; summary: string; assets: SceneAsset[]; warnings: string[]};
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
-const sceneAssets: SceneAsset[] = [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}];
+const sceneAssetsByEngine: Record<SimulationEngine, SceneAsset[]> = {
+    isaaclab: [{id: "training-cube", asset: "box", position: [0.45, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
+    mujoco: [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
+};
+let sceneAssets = sceneAssetsByEngine[selectedSimulationEngine];
 sceneUserInput.value = localStorage.getItem("mujocoweb-scene-user") || "Guest";
 sceneAccountLabel.textContent = `User: ${sceneUserInput.value}`;
 
@@ -860,6 +864,15 @@ function setSceneAccountOpen(open: boolean): void {
 
 function renderSceneDraft(): void {
     sceneDraft.textContent = sceneAssets.map((item) => `${item.asset} · position ${item.position.join(", ")} · rotation ${item.rotation.join(", ")}° · scale ${item.scale.join(", ")} · color ${item.color.join(", ")}`).join("\n");
+}
+
+function activateEngineScene(engine: SimulationEngine): void {
+    sceneAssets = sceneAssetsByEngine[engine];
+    selectedSceneAsset = -1;
+    closeSceneContextMenu();
+    sceneHoverIndicator.hidden = true;
+    renderSceneDraft();
+    renderSceneGizmo();
 }
 
 function addSceneAsset(asset: string, position = [0.05 * (sceneAssets.length + 1), 0, 0.04]) {
@@ -1894,6 +1907,7 @@ try {
     if (storedConfiguration) {
         const parsed = JSON.parse(storedConfiguration) as Partial<typeof defaultConfiguration> & {generatedObject?: GeneratedObject};
         selectedSimulationEngine = parsed.engine === "mujoco" ? "mujoco" : "isaaclab";
+        activateEngineScene(selectedSimulationEngine);
         const storedTask = parsed.taskId && parsed.taskId in taskCatalog
             ? parsed.taskId as TaskId
             : "relocate";
@@ -2326,6 +2340,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
             backendUrl = RENDER_BACKEND_URL;
             if (selectedSimulationEngine === "isaaclab") {
                 selectedSimulationEngine = "mujoco";
+                activateEngineScene(selectedSimulationEngine);
                 updateEngineUi();
                 applyConfiguration();
             }
@@ -2620,6 +2635,7 @@ simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 simulationEngineSelect.addEventListener("change", () => {
     selectedSimulationEngine = simulationEngineSelect.value === "mujoco" ? "mujoco" : "isaaclab";
+    activateEngineScene(selectedSimulationEngine);
     resetSimulationForConfiguration();
     updateEngineUi();
     applyConfiguration();
