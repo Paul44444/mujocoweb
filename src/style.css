@@ -903,6 +903,8 @@ h1 {
 .scene-drop-preview.invalid::after { border-color: #fb7185; }
 
 .scene-drop-shape { font-size: 1.25rem; line-height: 1; }
+.scene-hover-indicator { position: absolute; z-index: 4; width: 42px; height: 42px; border: 2px solid rgba(190, 242, 100, 0.95); border-radius: 50%; background: rgba(163, 230, 53, 0.12); box-shadow: 0 0 0 5px rgba(163, 230, 53, 0.08), 0 0 18px rgba(163, 230, 53, 0.35); pointer-events: none; transform: translate(-50%, -50%); transition: opacity 80ms ease, transform 80ms ease; }
+.scene-hover-indicator[hidden] { display: none; }
 
 .scene-gizmo { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
 .scene-gizmo[hidden] { display: none; }

@@ -162,6 +162,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <span id="sceneDropShape" class="scene-drop-shape">▣</span>
             <span id="sceneDropLabel">Release to place</span>
           </div>
+          <div id="sceneHoverIndicator" class="scene-hover-indicator" hidden aria-hidden="true"></div>
           <div id="sceneGizmo" class="scene-gizmo" hidden>
             <div class="scene-gizmo-toolbar"><span id="sceneGizmoName"></span><button type="button" data-gizmo-mode="move" class="active">Move</button><button type="button" data-gizmo-mode="rotate">Rotate</button></div>
             <svg id="sceneGizmoAxes" aria-label="Drag an axis to transform the selected asset"></svg>
@@ -635,6 +636,7 @@ const simulationImage =
 const placeholder =
     document.querySelector<HTMLDivElement>("#placeholder")!;
 const sceneDropPreview = document.querySelector<HTMLDivElement>("#sceneDropPreview")!;
+const sceneHoverIndicator = document.querySelector<HTMLDivElement>("#sceneHoverIndicator")!;
 const sceneContextMenu = document.querySelector<HTMLDivElement>("#sceneContextMenu")!;
 const sceneDeleteAssetButton = document.querySelector<HTMLButtonElement>("#sceneDeleteAssetButton")!;
 const sceneDropShape = document.querySelector<HTMLElement>("#sceneDropShape")!;
@@ -1880,9 +1882,7 @@ function updateEngineUi(): void {
         button.disabled = !supported;
         if (button.dataset.liveAsset) button.draggable = supported;
     });
-    cameraHelp.textContent = usesMujoco
-        ? "Drag to orbit · Scroll or pinch to zoom"
-        : "Left-drag to orbit · Middle-drag to pan · Scroll or pinch to zoom";
+    cameraHelp.textContent = "Left-drag to orbit · Middle-drag to pan · Scroll or pinch to zoom";
     resetCameraButton.disabled = !socket || socket.readyState !== WebSocket.OPEN;
     updateEditorEngineUi();
 }
@@ -2013,10 +2013,10 @@ function renderSceneGizmo(): void {
     toolbar.style.top = `${Math.max(8, center.y - 112)}px`;
 }
 
-function pickSceneAsset(event: {clientX: number; clientY: number}): boolean {
+function sceneAssetAt(clientX: number, clientY: number): number {
     const bounds = simulationWindow.getBoundingClientRect();
-    const x = event.clientX - bounds.left;
-    const y = event.clientY - bounds.top;
+    const x = clientX - bounds.left;
+    const y = clientY - bounds.top;
     let nearest = -1;
     let nearestScore = 1;
     sceneAssets.forEach((asset, index) => {
@@ -2034,9 +2034,27 @@ function pickSceneAsset(event: {clientX: number; clientY: number}): boolean {
         const score = separation / hitRadius;
         if (score < nearestScore) { nearestScore = score; nearest = index; }
     });
-    selectedSceneAsset = nearest;
+    return nearest;
+}
+
+function pickSceneAsset(event: {clientX: number; clientY: number}): boolean {
+    selectedSceneAsset = sceneAssetAt(event.clientX, event.clientY);
     renderSceneGizmo();
-    return nearest >= 0;
+    return selectedSceneAsset >= 0;
+}
+
+function updateSceneAssetHover(event: PointerEvent): void {
+    if (!editorPreviewActive || event.buttons !== 0 || draggedSceneAsset) {
+        sceneHoverIndicator.hidden = true;
+        return;
+    }
+    const index = sceneAssetAt(event.clientX, event.clientY);
+    const point = index >= 0 ? projectScenePoint(sceneAssets[index].position) : null;
+    sceneHoverIndicator.hidden = !point;
+    if (!point) return;
+    sceneHoverIndicator.style.left = `${point.x}px`;
+    sceneHoverIndicator.style.top = `${point.y}px`;
+    sceneHoverIndicator.title = sceneAssets[index].id;
 }
 
 function closeSceneContextMenu(): void {
@@ -2130,8 +2148,9 @@ async function handlePlaybackButton(): Promise<void> {
 }
 
 function beginCameraDrag(event: PointerEvent): void {
-    const isPan = selectedSimulationEngine === "isaaclab" && event.button === 1;
+    const isPan = event.button === 1;
     if (!socket || socket.readyState !== WebSocket.OPEN || (event.button !== 0 && !isPan)) return;
+    sceneHoverIndicator.hidden = true;
     if (!isPan && editorPreviewActive && pickSceneAsset(event)) { event.preventDefault(); return; }
     event.preventDefault();
     activePointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
@@ -2374,8 +2393,10 @@ startButton.addEventListener("click", handlePlaybackButton);
 simulationImage.addEventListener("click", handleSimulationClick);
 simulationImage.addEventListener("pointerdown", beginCameraDrag);
 simulationImage.addEventListener("pointermove", updateCameraDrag);
+simulationImage.addEventListener("pointermove", updateSceneAssetHover);
 simulationImage.addEventListener("pointerup", endCameraDrag);
 simulationImage.addEventListener("pointercancel", endCameraDrag);
+simulationImage.addEventListener("pointerleave", () => { sceneHoverIndicator.hidden = true; });
 simulationImage.addEventListener("auxclick", (event) => {
     if (event.button === 1) event.preventDefault();
 });
