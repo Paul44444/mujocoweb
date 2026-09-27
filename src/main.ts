@@ -626,16 +626,17 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     </form>
     <p class="ai-assistant-note">Safety-checked and rate-limited · <span id="aiAssistantQuota">file sharing is off</span>. The assistant never saves or executes code automatically.</p>
   </aside>
-  <aside id="trainingPanel" class="training-panel" aria-label="MuJoCo training" hidden>
+  <aside id="trainingPanel" class="training-panel" aria-label="Policy training" hidden>
     <header class="training-panel-header">
-      <div><span class="panel-eyebrow">MuJoCo · DAPG</span><strong>Policy training</strong></div>
+      <div><span id="trainingEngineLabel" class="panel-eyebrow">MuJoCo · DAPG</span><strong>Policy training</strong></div>
       <button id="trainingCloseButton" class="secondary-button" type="button">Close</button>
     </header>
-    <p class="training-safety">Fine-tunes a private copy of the stable Relocate checkpoint. The reference checkpoint is never overwritten.</p>
+    <p id="trainingSafety" class="training-safety">Fine-tunes a private copy of the stable Relocate checkpoint. The reference checkpoint is never overwritten.</p>
     <div class="training-controls">
-      <label>Iterations<input id="trainingIterations" type="number" min="1" max="25" value="10" /></label>
-      <label>Trajectories<input id="trainingTrajectories" type="number" min="1" max="8" value="3" /></label>
-      <label>Horizon<input id="trainingHorizon" type="number" min="20" max="500" value="200" /></label>
+      <label>Iterations<input id="trainingIterations" type="number" min="1" max="500" value="10" /></label>
+      <label id="trainingTrajectoriesLabel">Trajectories<input id="trainingTrajectories" type="number" min="1" max="8" value="3" /></label>
+      <label id="trainingHorizonLabel">Horizon<input id="trainingHorizon" type="number" min="20" max="500" value="200" /></label>
+      <label id="trainingEnvironmentsLabel" hidden>Environments<select id="trainingEnvironments"><option value="16">16</option><option value="32" selected>32</option><option value="64">64</option></select></label>
       <label>Seed<input id="trainingSeed" type="number" min="0" value="123" /></label>
     </div>
     <div class="training-actions">
@@ -648,7 +649,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <article><span>Status</span><strong id="trainingStatus">Idle</strong></article>
       <article><span>Iteration</span><strong id="trainingIteration">0 / 0</strong></article>
       <article><span>Mean reward</span><strong id="trainingReward">—</strong></article>
-      <article><span>VF error</span><strong id="trainingLoss">—</strong></article>
+      <article><span id="trainingLossLabel">VF error</span><strong id="trainingLoss">—</strong></article>
     </div>
     <section class="training-chart-card">
       <div><strong>Learning progress</strong><span>Reward and value-function error</span></div>
@@ -668,15 +669,22 @@ const trainingCloseButton = document.querySelector<HTMLButtonElement>("#training
 const trainingStartButton = document.querySelector<HTMLButtonElement>("#trainingStartButton")!;
 const trainingStopButton = document.querySelector<HTMLButtonElement>("#trainingStopButton")!;
 const trainingRunSelect = document.querySelector<HTMLSelectElement>("#trainingRunSelect")!;
+const trainingEngineLabel = document.querySelector<HTMLElement>("#trainingEngineLabel")!;
+const trainingSafety = document.querySelector<HTMLElement>("#trainingSafety")!;
 const trainingIterations = document.querySelector<HTMLInputElement>("#trainingIterations")!;
 const trainingTrajectories = document.querySelector<HTMLInputElement>("#trainingTrajectories")!;
 const trainingHorizon = document.querySelector<HTMLInputElement>("#trainingHorizon")!;
+const trainingTrajectoriesLabel = document.querySelector<HTMLElement>("#trainingTrajectoriesLabel")!;
+const trainingHorizonLabel = document.querySelector<HTMLElement>("#trainingHorizonLabel")!;
+const trainingEnvironmentsLabel = document.querySelector<HTMLElement>("#trainingEnvironmentsLabel")!;
+const trainingEnvironments = document.querySelector<HTMLSelectElement>("#trainingEnvironments")!;
 const trainingSeed = document.querySelector<HTMLInputElement>("#trainingSeed")!;
 const trainingMessage = document.querySelector<HTMLParagraphElement>("#trainingMessage")!;
 const trainingStatus = document.querySelector<HTMLElement>("#trainingStatus")!;
 const trainingIteration = document.querySelector<HTMLElement>("#trainingIteration")!;
 const trainingReward = document.querySelector<HTMLElement>("#trainingReward")!;
 const trainingLoss = document.querySelector<HTMLElement>("#trainingLoss")!;
+const trainingLossLabel = document.querySelector<HTMLElement>("#trainingLossLabel")!;
 const trainingChart = document.querySelector<SVGSVGElement>("#trainingChart")!;
 const trainingCheckpoints = document.querySelector<HTMLElement>("#trainingCheckpoints")!;
 const resetCameraButton = document.querySelector<HTMLButtonElement>("#resetCameraButton")!;
@@ -900,7 +908,7 @@ type TrainingMetric = {
 type TrainingRun = {
     id: string;
     status: {status: string; iteration?: number; error?: string; latest_checkpoint?: string};
-    config: {iterations?: number; trajectories?: number; horizon?: number; seed?: number};
+    config: {engine?: SimulationEngine; iterations?: number; trajectories?: number; horizon?: number; num_envs?: number; seed?: number};
     metrics: TrainingMetric[];
     checkpoints: string[];
 };
@@ -980,7 +988,7 @@ function renderTrainingRun(run: TrainingRun | null): void {
 
 async function refreshTrainingRuns(preferred = selectedTrainingRun): Promise<void> {
     try {
-        const result = await trainingRequest<{runs: TrainingRun[]}>("/runs");
+        const result = await trainingRequest<{runs: TrainingRun[]}>(`/runs?engine=${selectedSimulationEngine}`);
         trainingRunSelect.replaceChildren();
         if (!result.runs.length) {
             trainingRunSelect.append(new Option("No runs yet", ""));
@@ -1012,17 +1020,39 @@ function setTrainingOpen(open: boolean): void {
     }
 }
 
+function updateTrainingUi(): void {
+    const usesIsaac = selectedSimulationEngine === "isaaclab";
+    trainingEngineLabel.textContent = usesIsaac ? "NVIDIA Isaac Lab · RSL-RL PPO" : "MuJoCo · DAPG";
+    trainingSafety.textContent = usesIsaac
+        ? "Runs the official Franka Cube Lift trainer headlessly on the GPU. Checkpoints are isolated from the live viewer and existing policies."
+        : "Fine-tunes a private copy of the stable Relocate checkpoint. The reference checkpoint is never overwritten.";
+    trainingTrajectoriesLabel.hidden = usesIsaac;
+    trainingHorizonLabel.hidden = usesIsaac;
+    trainingEnvironmentsLabel.hidden = !usesIsaac;
+    trainingIterations.max = usesIsaac ? "500" : "25";
+    if (!usesIsaac && Number(trainingIterations.value) > 25) trainingIterations.value = "10";
+    trainingStartButton.textContent = usesIsaac ? "Start Isaac training" : "Start new training run";
+    trainingLossLabel.textContent = usesIsaac ? "Value loss" : "VF error";
+    trainingMessage.textContent = usesIsaac
+        ? "Ready for isolated GPU training with parallel environments."
+        : "Ready to create an isolated training run.";
+}
+
 async function startTraining(): Promise<void> {
     trainingStartButton.disabled = true;
-    trainingMessage.textContent = "Starting an isolated DAPG process…";
+    trainingMessage.textContent = selectedSimulationEngine === "isaaclab"
+        ? "Starting Isaac Lab headlessly; its first GPU startup can take a little while…"
+        : "Starting an isolated DAPG process…";
     try {
         const run = await trainingRequest<TrainingRun>("/start", {
             method: "POST",
             body: JSON.stringify({
+                engine: selectedSimulationEngine,
                 user: sceneUserInput.value.trim() || "Guest",
                 iterations: Number(trainingIterations.value),
                 trajectories: Number(trainingTrajectories.value),
                 horizon: Number(trainingHorizon.value),
+                num_envs: Number(trainingEnvironments.value),
                 seed: Number(trainingSeed.value),
             }),
         });
@@ -2092,9 +2122,11 @@ function updateEngineUi(): void {
         if (button.dataset.liveAsset) button.draggable = supported;
     });
     cameraHelp.textContent = "Left-drag to orbit · Middle-drag or Shift-drag to pan · Scroll or pinch to zoom";
-    trainingButton.disabled = !usesMujoco;
-    trainingButton.title = usesMujoco ? "Open DAPG training" : "The first training version supports MuJoCo · DAPG";
-    if (!usesMujoco && !trainingPanel.hidden) setTrainingOpen(false);
+    trainingButton.disabled = false;
+    trainingButton.title = usesMujoco ? "Open DAPG training" : "Open parallel Isaac Lab training";
+    selectedTrainingRun = "";
+    updateTrainingUi();
+    if (!trainingPanel.hidden) void refreshTrainingRuns();
     resetCameraButton.disabled = !socket || socket.readyState !== WebSocket.OPEN;
     updateEditorEngineUi();
 }
