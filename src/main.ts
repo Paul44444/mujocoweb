@@ -166,6 +166,9 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <div class="scene-gizmo-toolbar"><span id="sceneGizmoName"></span><button type="button" data-gizmo-mode="move" class="active">Move</button><button type="button" data-gizmo-mode="rotate">Rotate</button></div>
             <svg id="sceneGizmoAxes" aria-label="Drag an axis to transform the selected asset"></svg>
           </div>
+          <div id="sceneContextMenu" class="scene-context-menu" hidden role="menu">
+            <button id="sceneDeleteAssetButton" type="button" role="menuitem">Delete object</button>
+          </div>
 
           <div class="camera-controls" aria-label="Camera controls">
             <span id="cameraHelp">Drag to orbit · Scroll or pinch to zoom</span>
@@ -632,6 +635,8 @@ const simulationImage =
 const placeholder =
     document.querySelector<HTMLDivElement>("#placeholder")!;
 const sceneDropPreview = document.querySelector<HTMLDivElement>("#sceneDropPreview")!;
+const sceneContextMenu = document.querySelector<HTMLDivElement>("#sceneContextMenu")!;
+const sceneDeleteAssetButton = document.querySelector<HTMLButtonElement>("#sceneDeleteAssetButton")!;
 const sceneDropShape = document.querySelector<HTMLElement>("#sceneDropShape")!;
 const sceneDropLabel = document.querySelector<HTMLElement>("#sceneDropLabel")!;
 
@@ -2004,7 +2009,7 @@ function renderSceneGizmo(): void {
     toolbar.style.top = `${Math.max(8, center.y - 112)}px`;
 }
 
-function pickSceneAsset(event: PointerEvent): boolean {
+function pickSceneAsset(event: {clientX: number; clientY: number}): boolean {
     const bounds = simulationWindow.getBoundingClientRect();
     const x = event.clientX - bounds.left;
     const y = event.clientY - bounds.top;
@@ -2019,6 +2024,31 @@ function pickSceneAsset(event: PointerEvent): boolean {
     selectedSceneAsset = nearest;
     renderSceneGizmo();
     return nearest >= 0;
+}
+
+function closeSceneContextMenu(): void {
+    sceneContextMenu.hidden = true;
+}
+
+function removeSelectedSceneAsset(): void {
+    if (selectedSceneAsset < 0 || selectedSceneAsset >= sceneAssets.length) return;
+    const [removed] = sceneAssets.splice(selectedSceneAsset, 1);
+    selectedSceneAsset = -1;
+    closeSceneContextMenu();
+    renderSceneDraft();
+    renderSceneGizmo();
+
+    if (selectedSimulationEngine === "isaaclab") {
+        sendSimulationCommand({type: "scene_replace", assets: sceneAssets});
+        setStatus(`${removed.id} deleted from the scene`, "connected");
+    } else if (editorPreviewActive && socket) {
+        const previous = socket;
+        socket = null;
+        previous.close();
+        window.setTimeout(() => connectToSimulation(false, true), 180);
+        setStatus(`${removed.id} deleted — updating GPU editor scene…`, "connecting");
+    }
+    sceneMessage.textContent = `${removed.id} was removed. Save the scene to keep this change.`;
 }
 
 function sendSimulationCommand(command: Record<string, unknown>): boolean {
@@ -2320,6 +2350,20 @@ simulationImage.addEventListener("lostpointercapture", (event) => {
     }
 });
 simulationImage.addEventListener("dragstart", (event) => event.preventDefault());
+simulationImage.addEventListener("contextmenu", (event) => {
+    if (!editorPreviewActive || !pickSceneAsset(event)) {
+        closeSceneContextMenu();
+        return;
+    }
+    event.preventDefault();
+    const bounds = simulationWindow.getBoundingClientRect();
+    sceneContextMenu.hidden = false;
+    const menuWidth = sceneContextMenu.offsetWidth;
+    const menuHeight = sceneContextMenu.offsetHeight;
+    sceneContextMenu.style.left = `${Math.max(8, Math.min(bounds.width - menuWidth - 8, event.clientX - bounds.left))}px`;
+    sceneContextMenu.style.top = `${Math.max(8, Math.min(bounds.height - menuHeight - 8, event.clientY - bounds.top))}px`;
+});
+sceneDeleteAssetButton.addEventListener("click", removeSelectedSceneAsset);
 document.querySelectorAll<HTMLElement>("[data-live-asset]").forEach((asset) => {
     asset.addEventListener("dragstart", (event) => {
         if (!event.dataTransfer) return;
@@ -2549,7 +2593,19 @@ setupForm.addEventListener("submit", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+    if ((event.key === "Delete" || event.key === "Backspace") && selectedSceneAsset >= 0 && editorPreviewActive) {
+        const target = event.target as HTMLElement | null;
+        if (!target?.closest("input, textarea, select, button, [contenteditable='true'], .cm-editor")) {
+            event.preventDefault();
+            removeSelectedSceneAsset();
+            return;
+        }
+    }
     if (event.key !== "Escape") return;
+    if (!sceneContextMenu.hidden) {
+        closeSceneContextMenu();
+        return;
+    }
     if (!aiAssistantPanel.hidden) setAssistantOpen(false);
     else if (!sceneAccountPanel.hidden) setSceneAccountOpen(false);
     else if (setupPanel.classList.contains("open")) closeSetupPanel();
@@ -2559,6 +2615,7 @@ document.addEventListener("keydown", (event) => {
 
 document.addEventListener("pointerdown", (event) => {
     const target = event.target as Node;
+    if (!sceneContextMenu.hidden && !sceneContextMenu.contains(target)) closeSceneContextMenu();
     if (!sceneAccountPanel.hidden && !sceneAccountPanel.contains(target) && !sceneAccountButton.contains(target)) {
         setSceneAccountOpen(false);
     }
