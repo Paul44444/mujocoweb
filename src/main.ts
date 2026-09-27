@@ -129,6 +129,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               Experiment setup
             </button>
             <button id="codeEditorButton" class="setup-button" type="button" aria-controls="codeEditorPane" aria-expanded="false">Code editor</button>
+            <button id="sceneEditButton" class="setup-button" type="button" hidden>Edit scene</button>
             <button id="startButton" type="button">
               <span class="playback-icon play-icon" aria-hidden="true"></span>
               <span class="playback-label">Start simulation</span>
@@ -628,6 +629,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
 const startButton =
     document.querySelector<HTMLButtonElement>("#startButton")!;
+const sceneEditButton = document.querySelector<HTMLButtonElement>("#sceneEditButton")!;
 const resetCameraButton = document.querySelector<HTMLButtonElement>("#resetCameraButton")!;
 
 const simulationImage =
@@ -2127,6 +2129,21 @@ function updatePlaybackButton(): void {
     icon.className = `playback-icon ${connected && !editorPreviewActive && !isPaused ? "pause-icon" : "play-icon"}`;
     label.textContent = connected && !editorPreviewActive ? (isPaused ? "Resume" : "Pause") : "Start simulation";
     startButton.setAttribute("aria-label", label.textContent);
+    sceneEditButton.hidden = !connected || editorPreviewActive;
+}
+
+function returnToSceneEditor(): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN || editorPreviewActive) return;
+    const previous = socket;
+    socket = null;
+    isPaused = false;
+    selectedSceneAsset = -1;
+    closeSceneContextMenu();
+    renderSceneGizmo();
+    previous.close(1000, "Returning to scene editor");
+    updatePlaybackButton();
+    setStatus("Returning to scene editor…", "connecting");
+    window.setTimeout(() => connectToSimulation(false, true), 150);
 }
 
 async function handlePlaybackButton(): Promise<void> {
@@ -2346,9 +2363,7 @@ function handleTextMessage(message: string): void {
 
         if (data.type === "frame_metadata") {
             if (data.render_camera) renderCamera = data.render_camera;
-            if (data.editor_preview) {
-                if (data.camera) previewCamera = data.camera;
-            }
+            if (data.camera && selectedSimulationEngine === "mujoco") previewCamera = data.camera;
             if (selectedSceneAsset >= 0) renderSceneGizmo();
             episodeValue.textContent = String(data.episode ?? "—");
             stepValue.textContent = String(data.step ?? "—");
@@ -2401,6 +2416,7 @@ function displayFrame(frameBlob: Blob): void {
 }
 
 startButton.addEventListener("click", handlePlaybackButton);
+sceneEditButton.addEventListener("click", returnToSceneEditor);
 simulationImage.addEventListener("click", handleSimulationClick);
 simulationImage.addEventListener("pointerdown", beginCameraDrag);
 simulationImage.addEventListener("mousedown", (event) => {
