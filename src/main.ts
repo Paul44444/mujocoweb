@@ -977,11 +977,15 @@ function renderTrainingRun(run: TrainingRun | null): void {
     if (run.status.error) trainingMessage.textContent = run.status.error;
     const rewards = run.metrics.map((metric) => metric.reward_mean);
     const losses = run.metrics.map((metric) => metric.vf_error_after);
+    const rewardPoints = chartPoints(rewards, 52, 22, 564, 164).split(" ").filter(Boolean);
+    const lossPoints = chartPoints(losses, 52, 22, 564, 164).split(" ").filter(Boolean);
     trainingChart.innerHTML = `
       <path d="M48 18V190H620" fill="none" stroke="#3f3f46" stroke-width="1"/>
       <path d="M48 61H620M48 104H620M48 147H620" fill="none" stroke="#27272a" stroke-width="1"/>
-      <polyline points="${chartPoints(rewards, 52, 22, 564, 164)}" fill="none" stroke="#a3e635" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-      <polyline points="${chartPoints(losses, 52, 22, 564, 164)}" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="${rewardPoints.join(" ")}" fill="none" stroke="#a3e635" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      ${rewardPoints.map((point) => `<circle cx="${point.split(",")[0]}" cy="${point.split(",")[1]}" r="4" fill="#a3e635"/>`).join("")}
+      <polyline points="${lossPoints.join(" ")}" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      ${lossPoints.map((point) => `<circle cx="${point.split(",")[0]}" cy="${point.split(",")[1]}" r="3" fill="#60a5fa"/>`).join("")}
       <text x="48" y="210" fill="#71717a" font-size="12">Iteration 1</text>
       <text x="620" y="210" text-anchor="end" fill="#71717a" font-size="12">${run.metrics.length || 0}</text>`;
 }
