@@ -2252,9 +2252,11 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
     }
     if (selectedSimulationEngine === "mujoco" && editorPreview) {
         websocketUrl.searchParams.set("editor", "1");
-        if (previewCamera) websocketUrl.searchParams.set("camera", JSON.stringify(previewCamera));
     } else if (selectedSimulationEngine === "mujoco" && generatedObject && selectedTaskId === "relocate") {
         websocketUrl.searchParams.set("object", JSON.stringify(generatedObject));
+    }
+    if (selectedSimulationEngine === "mujoco" && (editorPreview || runEditedScene) && previewCamera) {
+        websocketUrl.searchParams.set("camera", JSON.stringify(previewCamera));
     }
 
     console.log("Connecting to WebSocket:", websocketUrl);
