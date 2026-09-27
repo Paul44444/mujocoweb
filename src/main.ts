@@ -1882,7 +1882,7 @@ function updateEngineUi(): void {
         button.disabled = !supported;
         if (button.dataset.liveAsset) button.draggable = supported;
     });
-    cameraHelp.textContent = "Left-drag to orbit · Middle-drag to pan · Scroll or pinch to zoom";
+    cameraHelp.textContent = "Left-drag to orbit · Middle-drag or Shift-drag to pan · Scroll or pinch to zoom";
     resetCameraButton.disabled = !socket || socket.readyState !== WebSocket.OPEN;
     updateEditorEngineUi();
 }
@@ -2148,7 +2148,7 @@ async function handlePlaybackButton(): Promise<void> {
 }
 
 function beginCameraDrag(event: PointerEvent): void {
-    const isPan = event.button === 1;
+    const isPan = event.button === 1 || (event.button === 0 && event.shiftKey);
     if (!socket || socket.readyState !== WebSocket.OPEN || (event.button !== 0 && !isPan)) return;
     sceneHoverIndicator.hidden = true;
     if (!isPan && editorPreviewActive && pickSceneAsset(event)) { event.preventDefault(); return; }
@@ -2167,7 +2167,16 @@ function beginCameraDrag(event: PointerEvent): void {
 }
 
 function updateCameraDrag(event: PointerEvent): void {
-    const previous = activePointers.get(event.pointerId);
+    let previous = activePointers.get(event.pointerId);
+    // Some browsers reserve middle-click for autoscroll and omit its initial
+    // pointerdown. Recover as soon as movement reports the middle button held.
+    if (!previous && event.pointerType === "mouse" && (event.buttons & 4) !== 0) {
+        previous = {x: event.clientX, y: event.clientY};
+        activePointers.set(event.pointerId, previous);
+        cameraDrag = {pointerId: event.pointerId, x: event.clientX, y: event.clientY, mode: "pan"};
+        cameraGestureMoved = false;
+        if (!simulationImage.hasPointerCapture(event.pointerId)) simulationImage.setPointerCapture(event.pointerId);
+    }
     if (!previous) return;
     event.preventDefault();
     activePointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
@@ -2392,6 +2401,9 @@ function displayFrame(frameBlob: Blob): void {
 startButton.addEventListener("click", handlePlaybackButton);
 simulationImage.addEventListener("click", handleSimulationClick);
 simulationImage.addEventListener("pointerdown", beginCameraDrag);
+simulationImage.addEventListener("mousedown", (event) => {
+    if (event.button === 1) event.preventDefault();
+});
 simulationImage.addEventListener("pointermove", updateCameraDrag);
 simulationImage.addEventListener("pointermove", updateSceneAssetHover);
 simulationImage.addEventListener("pointerup", endCameraDrag);
