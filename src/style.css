@@ -421,6 +421,37 @@ h1 {
     color: #d9f99d;
 }
 
+.training-panel { position: fixed; z-index: 45; right: 24px; bottom: 24px; width: min(720px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; padding: 18px; border: 1px solid #3f3f46; border-radius: 16px; background: rgba(18, 18, 22, 0.98); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.62); color: #e4e4e7; }
+.training-panel[hidden] { display: none; }
+.training-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.training-panel-header > div { display: grid; gap: 3px; }
+.training-panel-header strong { font-size: 1.12rem; }
+.training-safety { margin: 12px 0; padding: 10px 12px; border: 1px solid rgba(163, 230, 53, 0.22); border-radius: 9px; background: rgba(101, 163, 13, 0.08); color: #cbd5b0; font-size: 0.82rem; }
+.training-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.training-controls label { display: grid; gap: 5px; color: #a1a1aa; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.training-controls input, .training-actions select { min-width: 0; padding: 9px 10px; border: 1px solid #3f3f46; border-radius: 8px; background: #09090b; color: #f4f4f5; }
+.training-actions { display: grid; grid-template-columns: auto auto minmax(180px, 1fr); gap: 9px; margin-top: 12px; }
+.training-actions button { white-space: nowrap; }
+.training-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
+.training-metrics article { display: grid; gap: 4px; padding: 10px; border: 1px solid #27272a; border-radius: 9px; background: #101014; }
+.training-metrics span { color: #71717a; font-size: 0.72rem; text-transform: uppercase; }
+.training-metrics strong { color: #f4f4f5; font-variant-numeric: tabular-nums; }
+.training-chart-card { padding: 12px; border: 1px solid #27272a; border-radius: 11px; background: #09090b; }
+.training-chart-card > div:first-child { display: flex; justify-content: space-between; color: #a1a1aa; font-size: 0.78rem; }
+.training-chart-card svg { display: block; width: 100%; height: auto; margin-top: 6px; }
+.training-chart-legend { display: flex; gap: 18px; color: #a1a1aa; font-size: 0.75rem; }
+.training-chart-legend span::before { content: ""; display: inline-block; width: 18px; height: 3px; margin-right: 6px; vertical-align: middle; border-radius: 2px; background: #a3e635; }
+.training-chart-legend .loss::before { background: #60a5fa; }
+.training-checkpoints { display: grid; gap: 5px; margin-top: 12px; color: #a1a1aa; font-size: 0.78rem; }
+.training-checkpoints span { overflow-wrap: anywhere; color: #d4d4d8; }
+
+@media (max-width: 720px) {
+    .training-panel { right: 8px; bottom: 8px; width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
+    .training-controls, .training-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .training-actions { grid-template-columns: 1fr 1fr; }
+    .training-actions select { grid-column: 1 / -1; }
+}
+
 .workbench.editor-open {
     grid-template-columns: minmax(170px, 210px) minmax(150px, 18%) minmax(0, 1fr);
 }

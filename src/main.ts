@@ -129,6 +129,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               Experiment setup
             </button>
             <button id="codeEditorButton" class="setup-button" type="button" aria-controls="codeEditorPane" aria-expanded="false">Code editor</button>
+            <button id="trainingButton" class="setup-button" type="button" aria-controls="trainingPanel" aria-expanded="false">Training</button>
             <button id="sceneEditButton" class="setup-button" type="button" hidden>Edit scene</button>
             <button id="startButton" type="button">
               <span class="playback-icon play-icon" aria-hidden="true"></span>
@@ -625,11 +626,59 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     </form>
     <p class="ai-assistant-note">Safety-checked and rate-limited · <span id="aiAssistantQuota">file sharing is off</span>. The assistant never saves or executes code automatically.</p>
   </aside>
+  <aside id="trainingPanel" class="training-panel" aria-label="MuJoCo training" hidden>
+    <header class="training-panel-header">
+      <div><span class="panel-eyebrow">MuJoCo · DAPG</span><strong>Policy training</strong></div>
+      <button id="trainingCloseButton" class="secondary-button" type="button">Close</button>
+    </header>
+    <p class="training-safety">Fine-tunes a private copy of the stable Relocate checkpoint. The reference checkpoint is never overwritten.</p>
+    <div class="training-controls">
+      <label>Iterations<input id="trainingIterations" type="number" min="1" max="25" value="10" /></label>
+      <label>Trajectories<input id="trainingTrajectories" type="number" min="1" max="8" value="3" /></label>
+      <label>Horizon<input id="trainingHorizon" type="number" min="20" max="500" value="200" /></label>
+      <label>Seed<input id="trainingSeed" type="number" min="0" value="123" /></label>
+    </div>
+    <div class="training-actions">
+      <button id="trainingStartButton" class="apply-button" type="button">Start new training run</button>
+      <button id="trainingStopButton" class="secondary-button" type="button" disabled>Stop</button>
+      <select id="trainingRunSelect" aria-label="Training run"><option value="">No runs yet</option></select>
+    </div>
+    <p id="trainingMessage" class="generator-message" aria-live="polite">Ready to create an isolated training run.</p>
+    <div class="training-metrics">
+      <article><span>Status</span><strong id="trainingStatus">Idle</strong></article>
+      <article><span>Iteration</span><strong id="trainingIteration">0 / 0</strong></article>
+      <article><span>Mean reward</span><strong id="trainingReward">—</strong></article>
+      <article><span>VF error</span><strong id="trainingLoss">—</strong></article>
+    </div>
+    <section class="training-chart-card">
+      <div><strong>Learning progress</strong><span>Reward and value-function error</span></div>
+      <svg id="trainingChart" viewBox="0 0 640 220" role="img" aria-label="Training reward and loss chart"></svg>
+      <div class="training-chart-legend"><span class="reward">Mean reward</span><span class="loss">VF error after</span></div>
+    </section>
+    <div class="training-checkpoints"><strong>New checkpoints</strong><span id="trainingCheckpoints">None yet</span></div>
+  </aside>
 `;
 
 const startButton =
     document.querySelector<HTMLButtonElement>("#startButton")!;
 const sceneEditButton = document.querySelector<HTMLButtonElement>("#sceneEditButton")!;
+const trainingButton = document.querySelector<HTMLButtonElement>("#trainingButton")!;
+const trainingPanel = document.querySelector<HTMLElement>("#trainingPanel")!;
+const trainingCloseButton = document.querySelector<HTMLButtonElement>("#trainingCloseButton")!;
+const trainingStartButton = document.querySelector<HTMLButtonElement>("#trainingStartButton")!;
+const trainingStopButton = document.querySelector<HTMLButtonElement>("#trainingStopButton")!;
+const trainingRunSelect = document.querySelector<HTMLSelectElement>("#trainingRunSelect")!;
+const trainingIterations = document.querySelector<HTMLInputElement>("#trainingIterations")!;
+const trainingTrajectories = document.querySelector<HTMLInputElement>("#trainingTrajectories")!;
+const trainingHorizon = document.querySelector<HTMLInputElement>("#trainingHorizon")!;
+const trainingSeed = document.querySelector<HTMLInputElement>("#trainingSeed")!;
+const trainingMessage = document.querySelector<HTMLParagraphElement>("#trainingMessage")!;
+const trainingStatus = document.querySelector<HTMLElement>("#trainingStatus")!;
+const trainingIteration = document.querySelector<HTMLElement>("#trainingIteration")!;
+const trainingReward = document.querySelector<HTMLElement>("#trainingReward")!;
+const trainingLoss = document.querySelector<HTMLElement>("#trainingLoss")!;
+const trainingChart = document.querySelector<SVGSVGElement>("#trainingChart")!;
+const trainingCheckpoints = document.querySelector<HTMLElement>("#trainingCheckpoints")!;
 const resetCameraButton = document.querySelector<HTMLButtonElement>("#resetCameraButton")!;
 
 const simulationImage =
@@ -843,8 +892,22 @@ type SceneAsset = {
     color: number[];
 };
 type SceneProposal = {name: string; summary: string; assets: SceneAsset[]; warnings: string[]};
+type TrainingMetric = {
+    iteration: number; reward_mean: number; reward_std: number; reward_min: number; reward_max: number;
+    kl_distance: number; surrogate_improvement: number; vf_error_before: number; vf_error_after: number;
+    success_rate: number; samples: number; seconds: number;
+};
+type TrainingRun = {
+    id: string;
+    status: {status: string; iteration?: number; error?: string; latest_checkpoint?: string};
+    config: {iterations?: number; trajectories?: number; horizon?: number; seed?: number};
+    metrics: TrainingMetric[];
+    checkpoints: string[];
+};
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
+let selectedTrainingRun = "";
+let trainingPollTimer: number | null = null;
 const sceneAssetsByEngine: Record<SimulationEngine, SceneAsset[]> = {
     isaaclab: [{id: "training-cube", asset: "box", position: [0.45, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
     mujoco: [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
@@ -852,6 +915,137 @@ const sceneAssetsByEngine: Record<SimulationEngine, SceneAsset[]> = {
 let sceneAssets = sceneAssetsByEngine[selectedSimulationEngine];
 sceneUserInput.value = localStorage.getItem("mujocoweb-scene-user") || "Guest";
 sceneAccountLabel.textContent = `User: ${sceneUserInput.value}`;
+
+async function trainingRequest<T>(path: string, options?: RequestInit): Promise<T> {
+    await refreshPublishedBackendUrl();
+    const response = await fetch(backendHttpUrl(`/api/training${path}`), {
+        ...options,
+        headers: {"Content-Type": "application/json", ...(options?.headers ?? {})},
+    });
+    if (!response.ok) {
+        let message = `Training request failed (${response.status}).`;
+        try {
+            const error = await response.json() as {detail?: string};
+            if (error.detail) message = error.detail;
+        } catch { /* Keep status message. */ }
+        throw new Error(message);
+    }
+    return response.json() as Promise<T>;
+}
+
+function chartPoints(values: number[], left: number, top: number, width: number, height: number): string {
+    if (!values.length) return "";
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
+    const range = Math.max(1e-9, maximum - minimum);
+    return values.map((value, index) => {
+        const x = left + (values.length === 1 ? width / 2 : index * width / (values.length - 1));
+        const y = top + height - (value - minimum) / range * height;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+}
+
+function renderTrainingRun(run: TrainingRun | null): void {
+    if (!run) {
+        trainingStatus.textContent = "Idle";
+        trainingIteration.textContent = "0 / 0";
+        trainingReward.textContent = "—";
+        trainingLoss.textContent = "—";
+        trainingCheckpoints.textContent = "None yet";
+        trainingChart.innerHTML = `<text x="320" y="112" text-anchor="middle" fill="#71717a" font-size="15">Metrics appear after the first iteration</text>`;
+        trainingStopButton.disabled = true;
+        return;
+    }
+    const state = run.status.status;
+    const active = state === "starting" || state === "training";
+    const latest = run.metrics.at(-1);
+    trainingStatus.textContent = state[0]?.toUpperCase() + state.slice(1);
+    trainingIteration.textContent = `${run.status.iteration ?? run.metrics.length} / ${run.config.iterations ?? "—"}`;
+    trainingReward.textContent = latest ? latest.reward_mean.toFixed(3) : "—";
+    trainingLoss.textContent = latest ? latest.vf_error_after.toFixed(4) : "—";
+    trainingStopButton.disabled = !active;
+    trainingStartButton.disabled = active;
+    trainingCheckpoints.textContent = run.checkpoints.length ? run.checkpoints.join(" · ") : "None yet";
+    if (run.status.error) trainingMessage.textContent = run.status.error;
+    const rewards = run.metrics.map((metric) => metric.reward_mean);
+    const losses = run.metrics.map((metric) => metric.vf_error_after);
+    trainingChart.innerHTML = `
+      <path d="M48 18V190H620" fill="none" stroke="#3f3f46" stroke-width="1"/>
+      <path d="M48 61H620M48 104H620M48 147H620" fill="none" stroke="#27272a" stroke-width="1"/>
+      <polyline points="${chartPoints(rewards, 52, 22, 564, 164)}" fill="none" stroke="#a3e635" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="${chartPoints(losses, 52, 22, 564, 164)}" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="48" y="210" fill="#71717a" font-size="12">Iteration 1</text>
+      <text x="620" y="210" text-anchor="end" fill="#71717a" font-size="12">${run.metrics.length || 0}</text>`;
+}
+
+async function refreshTrainingRuns(preferred = selectedTrainingRun): Promise<void> {
+    try {
+        const result = await trainingRequest<{runs: TrainingRun[]}>("/runs");
+        trainingRunSelect.replaceChildren();
+        if (!result.runs.length) {
+            trainingRunSelect.append(new Option("No runs yet", ""));
+            selectedTrainingRun = "";
+            renderTrainingRun(null);
+            return;
+        }
+        for (const run of result.runs) {
+            trainingRunSelect.append(new Option(`${run.id} · ${run.status.status}`, run.id));
+        }
+        const run = result.runs.find((item) => item.id === preferred) ?? result.runs[0];
+        selectedTrainingRun = run.id;
+        trainingRunSelect.value = run.id;
+        renderTrainingRun(run);
+    } catch (error) {
+        trainingMessage.textContent = error instanceof Error ? error.message : "Could not load training runs.";
+    }
+}
+
+function setTrainingOpen(open: boolean): void {
+    trainingPanel.hidden = !open;
+    trainingButton.setAttribute("aria-expanded", String(open));
+    if (open) {
+        void refreshTrainingRuns();
+        if (trainingPollTimer === null) trainingPollTimer = window.setInterval(() => void refreshTrainingRuns(), 3000);
+    } else if (trainingPollTimer !== null) {
+        window.clearInterval(trainingPollTimer);
+        trainingPollTimer = null;
+    }
+}
+
+async function startTraining(): Promise<void> {
+    trainingStartButton.disabled = true;
+    trainingMessage.textContent = "Starting an isolated DAPG process…";
+    try {
+        const run = await trainingRequest<TrainingRun>("/start", {
+            method: "POST",
+            body: JSON.stringify({
+                user: sceneUserInput.value.trim() || "Guest",
+                iterations: Number(trainingIterations.value),
+                trajectories: Number(trainingTrajectories.value),
+                horizon: Number(trainingHorizon.value),
+                seed: Number(trainingSeed.value),
+            }),
+        });
+        selectedTrainingRun = run.id;
+        trainingMessage.textContent = `Training ${run.id} started. You may close this panel; the backend continues.`;
+        await refreshTrainingRuns(run.id);
+    } catch (error) {
+        trainingMessage.textContent = error instanceof Error ? error.message : "Could not start training.";
+        trainingStartButton.disabled = false;
+    }
+}
+
+async function stopTraining(): Promise<void> {
+    if (!selectedTrainingRun) return;
+    trainingStopButton.disabled = true;
+    trainingMessage.textContent = "Stopping after the current training operation…";
+    try {
+        const run = await trainingRequest<TrainingRun>(`/runs/${encodeURIComponent(selectedTrainingRun)}/stop`, {method: "POST"});
+        renderTrainingRun(run);
+    } catch (error) {
+        trainingMessage.textContent = error instanceof Error ? error.message : "Could not stop training.";
+    }
+}
 
 function setSceneAccountMessage(message: string): void {
     sceneAccountMessage.textContent = message;
@@ -1898,6 +2092,9 @@ function updateEngineUi(): void {
         if (button.dataset.liveAsset) button.draggable = supported;
     });
     cameraHelp.textContent = "Left-drag to orbit · Middle-drag or Shift-drag to pan · Scroll or pinch to zoom";
+    trainingButton.disabled = !usesMujoco;
+    trainingButton.title = usesMujoco ? "Open DAPG training" : "The first training version supports MuJoCo · DAPG";
+    if (!usesMujoco && !trainingPanel.hidden) setTrainingOpen(false);
     resetCameraButton.disabled = !socket || socket.readyState !== WebSocket.OPEN;
     updateEditorEngineUi();
 }
@@ -2432,6 +2629,14 @@ function displayFrame(frameBlob: Blob): void {
 
 startButton.addEventListener("click", handlePlaybackButton);
 sceneEditButton.addEventListener("click", returnToSceneEditor);
+trainingButton.addEventListener("click", () => setTrainingOpen(trainingPanel.hasAttribute("hidden")));
+trainingCloseButton.addEventListener("click", () => setTrainingOpen(false));
+trainingStartButton.addEventListener("click", () => void startTraining());
+trainingStopButton.addEventListener("click", () => void stopTraining());
+trainingRunSelect.addEventListener("change", () => {
+    selectedTrainingRun = trainingRunSelect.value;
+    void refreshTrainingRuns(selectedTrainingRun);
+});
 simulationImage.addEventListener("click", handleSimulationClick);
 simulationImage.addEventListener("pointerdown", beginCameraDrag);
 simulationImage.addEventListener("mousedown", (event) => {
