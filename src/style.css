@@ -913,6 +913,8 @@ h1 {
 .scene-gizmo-toolbar span { max-width: 75px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; }
 .scene-gizmo-toolbar button { padding: 4px 6px; border: 1px solid #52525b; border-radius: 4px; background: #27272a; color: white; cursor: pointer; font-size: 0.7rem; }
 .scene-gizmo-toolbar button.active { border-color: #a3e635; color: #d9f99d; }
+.scene-gizmo.selection-only .scene-gizmo-toolbar button { display: none; }
+.scene-gizmo.selection-only .scene-gizmo-toolbar { border-color: rgba(163, 230, 53, 0.65); color: #d9f99d; }
 .scene-context-menu { position: absolute; z-index: 12; min-width: 145px; padding: 5px; border: 1px solid #52525b; border-radius: 8px; background: rgba(9, 9, 11, 0.97); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); }
 .scene-context-menu[hidden] { display: none; }
 .scene-context-menu button { width: 100%; padding: 8px 10px; border: 0; border-radius: 5px; background: transparent; color: #fca5a5; text-align: left; cursor: pointer; }

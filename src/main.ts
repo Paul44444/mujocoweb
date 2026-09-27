@@ -1984,9 +1984,11 @@ function renderCameraRight(camera: RenderCamera): number[] {
 
 function renderSceneGizmo(): void {
     const asset = sceneAssets[selectedSceneAsset];
-    const center = asset && editorPreviewActive && selectedSimulationEngine === "mujoco" ? projectScenePoint(asset.position) : null;
+    const center = asset && editorPreviewActive ? projectScenePoint(asset.position) : null;
     sceneGizmo.hidden = !center;
     if (!center) return;
+    const isaacSelection = selectedSimulationEngine === "isaaclab";
+    sceneGizmo.classList.toggle("selection-only", isaacSelection);
     sceneGizmoName.textContent = asset.id;
     const bounds = simulationWindow.getBoundingClientRect();
     sceneGizmoAxes.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
@@ -2003,7 +2005,9 @@ function renderSceneGizmo(): void {
         const y = center.y + dy / length * 64;
         return `<g data-axis="${axis}"><line x1="${center.x}" y1="${center.y}" x2="${x}" y2="${y}" stroke="transparent" stroke-width="24"/><line x1="${center.x}" y1="${center.y}" x2="${x}" y2="${y}" stroke="${colors[axis]}" stroke-width="4" marker-end="url(#gizmoArrow)"/><circle cx="${x}" cy="${y}" r="13" fill="${colors[axis]}"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="white" font-size="12" font-weight="bold">${labels[axis]}</text></g>`;
     }).join("");
-    sceneGizmoAxes.innerHTML = `<defs><marker id="gizmoArrow" markerWidth="5" markerHeight="5" refX="3" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="white"/></marker></defs><circle cx="${center.x}" cy="${center.y}" r="10" fill="#fafafa" stroke="#18181b" stroke-width="3"/>${axes}`;
+    sceneGizmoAxes.innerHTML = isaacSelection
+        ? `<circle cx="${center.x}" cy="${center.y}" r="18" fill="rgba(163,230,53,.14)" stroke="#a3e635" stroke-width="3"/><circle cx="${center.x}" cy="${center.y}" r="3" fill="#d9f99d"/>`
+        : `<defs><marker id="gizmoArrow" markerWidth="5" markerHeight="5" refX="3" refY="2.5" orient="auto"><path d="M0 0 L5 2.5 L0 5 Z" fill="white"/></marker></defs><circle cx="${center.x}" cy="${center.y}" r="10" fill="#fafafa" stroke="#18181b" stroke-width="3"/>${axes}`;
     const toolbar = sceneGizmo.querySelector<HTMLElement>(".scene-gizmo-toolbar")!;
     toolbar.style.left = `${Math.max(8, Math.min(bounds.width - 190, center.x - 85))}px`;
     toolbar.style.top = `${Math.max(8, center.y - 112)}px`;
@@ -2014,12 +2018,21 @@ function pickSceneAsset(event: {clientX: number; clientY: number}): boolean {
     const x = event.clientX - bounds.left;
     const y = event.clientY - bounds.top;
     let nearest = -1;
-    let distance = 35;
+    let nearestScore = 1;
     sceneAssets.forEach((asset, index) => {
         const point = projectScenePoint(asset.position);
         if (!point) return;
         const separation = Math.hypot(point.x - x, point.y - y);
-        if (separation < distance) { distance = separation; nearest = index; }
+        let hitRadius = asset.asset === "kuka_allegro" ? 120 : 35;
+        if (asset.asset !== "kuka_allegro") {
+            const extents = asset.scale.map((value, axis) => {
+                const endpoint = projectScenePoint(asset.position.map((position, i) => position + (i === axis ? value : 0)));
+                return endpoint ? Math.hypot(endpoint.x - point.x, endpoint.y - point.y) : 0;
+            });
+            hitRadius = Math.max(28, Math.min(80, Math.max(...extents) + 14));
+        }
+        const score = separation / hitRadius;
+        if (score < nearestScore) { nearestScore = score; nearest = index; }
     });
     selectedSceneAsset = nearest;
     renderSceneGizmo();
@@ -2281,8 +2294,8 @@ function handleTextMessage(message: string): void {
             if (data.render_camera) renderCamera = data.render_camera;
             if (data.editor_preview) {
                 if (data.camera) previewCamera = data.camera;
-                renderSceneGizmo();
             }
+            if (selectedSceneAsset >= 0) renderSceneGizmo();
             episodeValue.textContent = String(data.episode ?? "—");
             stepValue.textContent = String(data.step ?? "—");
 
