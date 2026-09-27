@@ -118,6 +118,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <div class="scene-toolbar" aria-label="Scene storage">
               <select id="sceneSelect" class="scene-toolbar-select" aria-label="Scene to load"><option value="">Loading scenes…</option></select>
               <button id="sceneLoadButton" class="setup-button scene-toolbar-button" type="button">Load</button>
+              <button id="sceneDeleteButton" class="setup-button scene-toolbar-button scene-delete-button" type="button" disabled>Delete</button>
               <input id="sceneNameInput" class="scene-toolbar-name" value="DAPG Relocate Start" maxlength="48" aria-label="Scene name for saving" />
               <button id="sceneSaveButton" class="setup-button scene-toolbar-button" type="button">Save</button>
             </div>
@@ -756,6 +757,7 @@ const sceneAccountPanel = document.querySelector<HTMLElement>("#sceneAccountPane
 const sceneAccountMessage = document.querySelector<HTMLParagraphElement>("#sceneAccountMessage")!;
 const sceneSelect = document.querySelector<HTMLSelectElement>("#sceneSelect")!;
 const sceneLoadButton = document.querySelector<HTMLButtonElement>("#sceneLoadButton")!;
+const sceneDeleteButton = document.querySelector<HTMLButtonElement>("#sceneDeleteButton")!;
 const sceneGizmo = document.querySelector<HTMLElement>("#sceneGizmo")!;
 const sceneGizmoAxes = document.querySelector<SVGSVGElement>("#sceneGizmoAxes")!;
 const sceneGizmoName = document.querySelector<HTMLElement>("#sceneGizmoName")!;
@@ -1178,9 +1180,13 @@ async function loadSceneList(announce = true): Promise<void> {
     if (announce) setSceneAccountMessage(`Opening ${user}'s test account…`);
     try {
         const result = await sceneRequest<{scenes: string[]}>(`/users/${encodeURIComponent(user)}/scenes`);
-        sceneSelect.replaceChildren(...result.scenes.map((name) => new Option(name, name)));
+        const sceneOptions = result.scenes.map((name) => new Option(name, name));
+        const divider = new Option("──────────", "", false, false);
+        divider.disabled = true;
+        sceneSelect.replaceChildren(...sceneOptions, divider, new Option("＋ New scene…", "__new_scene__"));
         const preferred = result.scenes.includes(sceneNameInput.value) ? sceneNameInput.value : result.scenes[0];
         if (preferred) sceneSelect.value = preferred;
+        sceneDeleteButton.disabled = !preferred || preferred === "DAPG Relocate Start";
         await loadUserList(false);
         if (announce) setSceneAccountMessage(`${user}'s scenes are ready. No password is required in this test version.`);
     } catch (error) {
@@ -1191,6 +1197,19 @@ async function loadSceneList(announce = true): Promise<void> {
     } finally {
         sceneUserButton.disabled = false;
     }
+}
+
+function startNewScene(): void {
+    sceneAssets.splice(0, sceneAssets.length);
+    selectedSceneAsset = -1;
+    sceneNameInput.value = "Untitled scene";
+    sceneSelect.value = "__new_scene__";
+    sceneLoadButton.disabled = true;
+    sceneDeleteButton.disabled = true;
+    renderSceneDraft();
+    renderSceneGizmo();
+    reconnectSceneEditor();
+    sceneMessage.textContent = "New empty scene ready. Add assets, choose a name, then press Save.";
 }
 
 function reconnectSceneEditor(): void {
@@ -1209,6 +1228,7 @@ function flashSceneButton(button: HTMLButtonElement, message: string, fallback: 
 async function loadScene(): Promise<void> {
     const user = sceneUser();
     const name = sceneSelect.value;
+    if (name === "__new_scene__") { startNewScene(); return; }
     if (!user || !name) { sceneMessage.textContent = "Choose a saved scene first."; return; }
     sceneLoadButton.disabled = true;
     sceneMessage.textContent = `Loading ${name}…`;
@@ -1227,6 +1247,32 @@ async function loadScene(): Promise<void> {
         flashSceneButton(sceneLoadButton, "Failed", "Load");
     } finally {
         sceneLoadButton.disabled = false;
+    }
+}
+
+async function deleteScene(): Promise<void> {
+    const user = sceneUser();
+    const name = sceneSelect.value;
+    if (!user || !name || name === "__new_scene__") return;
+    if (name === "DAPG Relocate Start") {
+        sceneMessage.textContent = "The starter scene is kept as a safe fallback and cannot be deleted.";
+        return;
+    }
+    if (!window.confirm(`Delete the saved scene “${name}” for ${user}? This cannot be undone.`)) return;
+    sceneDeleteButton.disabled = true;
+    sceneMessage.textContent = `Deleting ${name}…`;
+    try {
+        await sceneRequest(`/users/${encodeURIComponent(user)}/scenes/${encodeURIComponent(name)}`, {method: "DELETE"});
+        if (sceneNameInput.value === name) sceneNameInput.value = "Untitled scene";
+        await loadSceneList(false);
+        sceneMessage.textContent = `${name} was deleted.`;
+        flashSceneButton(sceneDeleteButton, "Deleted ✓", "Delete");
+    } catch (error) {
+        sceneMessage.textContent = error instanceof Error ? error.message : "Could not delete scene.";
+        flashSceneButton(sceneDeleteButton, "Failed", "Delete");
+    } finally {
+        const selected = sceneSelect.value;
+        sceneDeleteButton.disabled = !selected || selected === "DAPG Relocate Start" || selected === "__new_scene__";
     }
 }
 
@@ -2907,6 +2953,15 @@ sceneUserInput.addEventListener("keydown", (event) => {
 });
 sceneLoadButton.addEventListener("click", () => void loadScene());
 sceneSelect.addEventListener("dblclick", () => void loadScene());
+sceneSelect.addEventListener("change", () => {
+    if (sceneSelect.value === "__new_scene__") {
+        startNewScene();
+        return;
+    }
+    sceneLoadButton.disabled = !sceneSelect.value;
+    sceneDeleteButton.disabled = !sceneSelect.value || sceneSelect.value === "DAPG Relocate Start";
+});
+sceneDeleteButton.addEventListener("click", () => void deleteScene());
 sceneSaveButton.addEventListener("click", () => void saveScene());
 sceneNameInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;

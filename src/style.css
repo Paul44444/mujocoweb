@@ -718,6 +718,8 @@ h1 {
 .scene-toolbar-name:focus,
 .engine-select:focus { border-color: rgba(118, 185, 0, 0.7); }
 .scene-toolbar-button { padding: 9px 10px; font-size: 0.78rem; }
+.scene-delete-button:not(:disabled) { color: #fca5a5; border-color: rgba(248, 113, 113, 0.35); }
+.scene-delete-button:not(:disabled):hover { color: #fecaca; border-color: rgba(248, 113, 113, 0.65); background: rgba(127, 29, 29, 0.22); }
 
 .setup-button {
     display: inline-flex;
