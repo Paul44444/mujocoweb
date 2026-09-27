@@ -2052,7 +2052,7 @@ function removeSelectedSceneAsset(): void {
     renderSceneGizmo();
 
     if (selectedSimulationEngine === "isaaclab") {
-        sendSimulationCommand({type: "scene_replace", assets: sceneAssets});
+        sendSimulationCommand({type: "scene_replace", assets: isaacScenePayload()});
         setStatus(`${removed.id} deleted from the scene`, "connected");
     } else if (editorPreviewActive && socket) {
         const previous = socket;
@@ -2068,6 +2068,30 @@ function sendSimulationCommand(command: Record<string, unknown>): boolean {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     socket.send(JSON.stringify(command));
     return true;
+}
+
+function isaacScenePayload(): SceneAsset[] {
+    const supported = new Set(["box", "sphere", "cylinder", "kuka_allegro"]);
+    return sceneAssets.filter((asset) => supported.has(asset.asset)).map((asset) => {
+        const kuka = asset.asset === "kuka_allegro";
+        return {
+            ...asset,
+            position: kuka
+                ? [
+                    Math.max(-1, Math.min(1.25, asset.position[0])),
+                    Math.max(-1, Math.min(1, asset.position[1])),
+                    Math.max(0, Math.min(0.5, asset.position[2])),
+                ]
+                : [
+                    Math.max(0.02, Math.min(0.98, asset.position[0])),
+                    Math.max(-0.45, Math.min(0.45, asset.position[1])),
+                    Math.max(0, Math.min(0.6, asset.position[2])),
+                ],
+            rotation: asset.rotation.map((value) => Math.max(-360, Math.min(360, value))),
+            scale: kuka ? [1, 1, 1] : asset.scale.map((value) => Math.max(0.001, Math.min(0.25, value))),
+            color: asset.color.map((value) => Math.max(0, Math.min(1, value))),
+        };
+    });
 }
 
 function togglePause(): void {
@@ -2225,7 +2249,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         updatePlaybackButton();
         resetCameraButton.disabled = false;
         if (selectedSimulationEngine === "isaaclab") {
-            sendSimulationCommand({type: "scene_replace", assets: sceneAssets});
+            sendSimulationCommand({type: "scene_replace", assets: isaacScenePayload()});
         }
     };
 
