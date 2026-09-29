@@ -430,8 +430,9 @@ h1 {
 .training-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .training-controls label { display: grid; gap: 5px; color: #a1a1aa; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .training-controls input, .training-controls select, .training-actions select { min-width: 0; padding: 9px 10px; border: 1px solid #3f3f46; border-radius: 8px; background: #09090b; color: #f4f4f5; }
-.training-actions { display: grid; grid-template-columns: auto auto minmax(180px, 1fr); gap: 9px; margin-top: 12px; }
+.training-actions { display: grid; grid-template-columns: auto auto minmax(240px, 1fr); align-items: end; gap: 9px; margin-top: 12px; }
 .training-actions button { white-space: nowrap; }
+.training-run-history { display: grid; gap: 5px; min-width: 0; color: #a1a1aa; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .training-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 14px 0; }
 .training-metrics article { display: grid; gap: 4px; padding: 10px; border: 1px solid #27272a; border-radius: 9px; background: #101014; }
 .training-metrics span { color: #71717a; font-size: 0.72rem; text-transform: uppercase; }
@@ -449,7 +450,7 @@ h1 {
     .training-panel { right: 8px; bottom: 8px; width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
     .training-controls, .training-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .training-actions { grid-template-columns: 1fr 1fr; }
-    .training-actions select { grid-column: 1 / -1; }
+    .training-run-history { grid-column: 1 / -1; }
 }
 
 .workbench.editor-open {
