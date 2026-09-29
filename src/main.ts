@@ -1053,20 +1053,25 @@ async function loadPolicyCheckpoint(): Promise<void> {
     checkpointLoadButton.disabled = true;
     const checkpoint = checkpointSelect.value || null;
     setStatus(checkpoint ? "Loading trained policy — Isaac Lab is restarting…" : "Returning to scripted preview…", "connecting");
-    startButton.disabled = true;
-    resetCameraButton.disabled = true;
-    simulationImage.classList.remove("visible");
-    placeholder.classList.remove("hidden");
-    placeholderMessage.textContent = "Starting Isaac Lab and loading policy…";
     try {
-        await trainingRequest("/checkpoints/select", {
+        const selection = await trainingRequest<{hot_swap?: boolean; estimated_seconds?: number}>("/checkpoints/select", {
             method: "POST",
             body: JSON.stringify({checkpoint}),
         });
         captureEvent("policy_checkpoint_loaded", {checkpoint: checkpoint ? "trained" : "scripted"});
-        const previous = socket;
-        socket = null;
-        previous?.close(1000, "Loading Isaac policy checkpoint");
+        const startedAt = Date.now();
+        if (selection.hot_swap) {
+            setStatus("Switching policy live — scene and camera stay loaded…", "connecting");
+        } else {
+            startButton.disabled = true;
+            resetCameraButton.disabled = true;
+            simulationImage.classList.remove("visible");
+            placeholder.classList.remove("hidden");
+            placeholderMessage.textContent = "Starting Isaac Lab and loading policy — usually about 30–60 seconds…";
+            const previous = socket;
+            socket = null;
+            previous?.close(1000, "Loading Isaac policy checkpoint");
+        }
         const deadline = Date.now() + 180_000;
         while (Date.now() < deadline) {
             const result = await trainingRequest<{
@@ -1075,12 +1080,21 @@ async function loadPolicyCheckpoint(): Promise<void> {
             }>("/checkpoints/status");
             const expected = checkpoint ?? null;
             if (result.worker?.status === "ready" && (result.worker.checkpoint ?? null) === expected) {
-                placeholderMessage.textContent = "Policy ready — connecting viewer…";
-                connectToSimulation(false, true);
+                if (selection.hot_swap) {
+                    setStatus("Trained policy active", "connected");
+                } else {
+                    placeholderMessage.textContent = "Policy ready — connecting viewer…";
+                    connectToSimulation(false, true);
+                }
                 return;
             }
             if (result.worker?.status === "failed" || result.worker?.status === "error") {
                 throw new Error(result.worker.error || "Isaac Lab could not load the policy.");
+            }
+            if (!selection.hot_swap) {
+                const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+                setStatus(`Loading Isaac policy… ${elapsed}s elapsed · usually about 30–60s`, "connecting");
+                placeholderMessage.textContent = `Isaac Lab is starting… ${elapsed}s elapsed (usually about 30–60 seconds)`;
             }
             await new Promise((resolve) => window.setTimeout(resolve, 1500));
         }
