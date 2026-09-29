@@ -703,8 +703,20 @@ h1 {
 }
 
 .checkpoint-toolbar { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
-.checkpoint-toolbar select { width: 210px; height: 39px; padding: 0 28px 0 9px; border: 1px solid rgba(96, 165, 250, 0.4); border-radius: 9px; outline: none; color: #e4e4e7; background: rgba(24, 24, 27, 0.92); font: inherit; font-size: 0.78rem; }
-.checkpoint-toolbar select:focus { border-color: rgba(96, 165, 250, 0.75); }
+.checkpoint-picker { position: relative; width: 230px; }
+.checkpoint-menu-button { display: flex; width: 100%; height: 39px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 9px; border: 1px solid rgba(96, 165, 250, 0.4); border-radius: 9px; outline: none; color: #e4e4e7; background: rgba(24, 24, 27, 0.96); font: inherit; font-size: 0.78rem; cursor: pointer; }
+.checkpoint-menu-button:focus, .checkpoint-menu-button[aria-expanded="true"] { border-color: rgba(96, 165, 250, 0.8); }
+.checkpoint-menu-button span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.checkpoint-menu { position: absolute; z-index: 80; top: calc(100% + 6px); right: 0; width: min(390px, calc(100vw - 32px)); max-height: 320px; overflow: auto; padding: 5px; border: 1px solid #3f3f46; border-radius: 10px; background: #111114; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.65); }
+.checkpoint-menu[hidden] { display: none; }
+.checkpoint-menu-row { display: grid; grid-template-columns: minmax(0, 1fr) 38px; align-items: stretch; border-radius: 7px; }
+.checkpoint-menu-row:hover, .checkpoint-menu-row[aria-selected="true"] { background: rgba(96, 165, 250, 0.11); }
+.checkpoint-menu-choice, .checkpoint-menu-delete { border: 0; color: #e4e4e7; background: transparent; cursor: pointer; }
+.checkpoint-menu-choice { overflow: hidden; padding: 9px 10px; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; }
+.checkpoint-menu-delete { border-radius: 6px; font-size: 0.9rem; }
+.checkpoint-menu-delete:hover:not(:disabled) { color: #fecaca; background: rgba(239, 68, 68, 0.18); }
+.checkpoint-menu-delete:disabled { cursor: not-allowed; filter: grayscale(1); opacity: 0.28; }
+.checkpoint-menu-delete-spacer { width: 38px; }
 
 .scene-toolbar-select,
 .scene-toolbar-name,

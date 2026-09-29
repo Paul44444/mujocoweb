@@ -126,9 +126,12 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               <button id="sceneSaveButton" class="setup-button scene-toolbar-button" type="button">Save</button>
             </div>
             <div id="checkpointToolbar" class="checkpoint-toolbar" aria-label="Isaac policy checkpoint">
-              <select id="checkpointSelect" aria-label="Policy checkpoint"><option value="">Scripted preview</option></select>
+              <select id="checkpointSelect" aria-label="Policy checkpoint" hidden><option value="">Scripted preview</option></select>
+              <div id="checkpointPicker" class="checkpoint-picker">
+                <button id="checkpointMenuButton" class="checkpoint-menu-button" type="button" aria-haspopup="listbox" aria-expanded="false"><span id="checkpointMenuLabel">Scripted preview</span><span aria-hidden="true">▾</span></button>
+                <div id="checkpointMenu" class="checkpoint-menu" role="listbox" hidden></div>
+              </div>
               <button id="checkpointLoadButton" class="setup-button scene-toolbar-button" type="button">Load policy</button>
-              <button id="checkpointDeleteButton" class="setup-button scene-toolbar-button scene-delete-button" type="button" aria-label="Delete selected checkpoint" title="Delete selected checkpoint" disabled>🗑</button>
             </div>
             <button id="setupButton" class="setup-button" type="button" aria-haspopup="dialog" aria-controls="setupPanel">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -775,7 +778,10 @@ const sceneDeleteButton = document.querySelector<HTMLButtonElement>("#sceneDelet
 const checkpointToolbar = document.querySelector<HTMLElement>("#checkpointToolbar")!;
 const checkpointSelect = document.querySelector<HTMLSelectElement>("#checkpointSelect")!;
 const checkpointLoadButton = document.querySelector<HTMLButtonElement>("#checkpointLoadButton")!;
-const checkpointDeleteButton = document.querySelector<HTMLButtonElement>("#checkpointDeleteButton")!;
+const checkpointPicker = document.querySelector<HTMLElement>("#checkpointPicker")!;
+const checkpointMenuButton = document.querySelector<HTMLButtonElement>("#checkpointMenuButton")!;
+const checkpointMenuLabel = document.querySelector<HTMLElement>("#checkpointMenuLabel")!;
+const checkpointMenu = document.querySelector<HTMLElement>("#checkpointMenu")!;
 const sceneGizmo = document.querySelector<HTMLElement>("#sceneGizmo")!;
 const sceneGizmoAxes = document.querySelector<SVGSVGElement>("#sceneGizmoAxes")!;
 const sceneGizmoName = document.querySelector<HTMLElement>("#sceneGizmoName")!;
@@ -939,6 +945,7 @@ let generatedObject: GeneratedObject | null = null;
 let selectedTrainingRun = "";
 let trainingPollTimer: number | null = null;
 let activePolicyCheckpoint: string | null = null;
+let availablePolicyCheckpoints: IsaacCheckpoint[] = [];
 const sceneAssetsByEngine: Record<SimulationEngine, SceneAsset[]> = {
     isaaclab: [{id: "training-cube", asset: "box", position: [0.45, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
     mujoco: [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
@@ -1043,6 +1050,7 @@ async function refreshCheckpoints(): Promise<void> {
     try {
         const result = await trainingRequest<{checkpoints: IsaacCheckpoint[]; selected?: string | null}>("/checkpoints");
         activePolicyCheckpoint = result.selected ?? null;
+        availablePolicyCheckpoints = result.checkpoints;
         const options = result.checkpoints.map((checkpoint) => {
             const option = new Option(checkpoint.label, checkpoint.id);
             option.dataset.deletable = String(checkpoint.deletable);
@@ -1054,35 +1062,79 @@ async function refreshCheckpoints(): Promise<void> {
         if (!checkpointSelect.value && playbackValue) checkpointSelect.value = result.selected ?? "";
         trainingResumeSelect.value = resumeValue;
         checkpointLoadButton.disabled = false;
-        updateCheckpointDeleteButton();
+        renderCheckpointMenu();
     } catch (error) {
         checkpointLoadButton.disabled = true;
         trainingMessage.textContent = error instanceof Error ? error.message : "Could not load checkpoints.";
     }
 }
 
-function updateCheckpointDeleteButton(): void {
-    const option = checkpointSelect.selectedOptions[0];
-    const isActive = Boolean(checkpointSelect.value && checkpointSelect.value === activePolicyCheckpoint);
-    checkpointDeleteButton.disabled = !checkpointSelect.value || option?.dataset.deletable !== "true" || isActive;
-    checkpointDeleteButton.title = isActive
-        ? "Load another policy before deleting the active checkpoint"
-        : "Delete selected checkpoint";
+function setCheckpointMenuOpen(open: boolean): void {
+    checkpointMenu.hidden = !open;
+    checkpointMenuButton.setAttribute("aria-expanded", String(open));
 }
 
-async function deletePolicyCheckpoint(): Promise<void> {
-    const checkpoint = checkpointSelect.value;
-    if (!checkpoint) return;
-    const label = checkpointSelect.selectedOptions[0]?.textContent ?? checkpoint;
+function choosePolicyCheckpoint(checkpoint: string): void {
+    checkpointSelect.value = checkpoint;
+    renderCheckpointMenu();
+    setCheckpointMenuOpen(false);
+}
+
+function renderCheckpointMenu(): void {
+    checkpointMenu.replaceChildren();
+    const entries: Array<IsaacCheckpoint | null> = [null, ...availablePolicyCheckpoints];
+    for (const checkpoint of entries) {
+        const id = checkpoint?.id ?? "";
+        const row = document.createElement("div");
+        row.className = "checkpoint-menu-row";
+        row.setAttribute("role", "option");
+        row.setAttribute("aria-selected", String(checkpointSelect.value === id));
+
+        const select = document.createElement("button");
+        select.type = "button";
+        select.className = "checkpoint-menu-choice";
+        select.textContent = checkpoint?.label ?? "Scripted preview";
+        select.title = select.textContent;
+        select.addEventListener("click", () => choosePolicyCheckpoint(id));
+        row.append(select);
+
+        if (checkpoint) {
+            const remove = document.createElement("button");
+            const active = checkpoint.id === activePolicyCheckpoint;
+            remove.type = "button";
+            remove.className = "checkpoint-menu-delete";
+            remove.textContent = "🗑";
+            remove.setAttribute("aria-label", `Delete ${checkpoint.label}`);
+            remove.title = active ? "Load another policy before deleting this checkpoint" : "Delete checkpoint";
+            remove.disabled = !checkpoint.deletable || active;
+            remove.addEventListener("click", (event) => {
+                event.stopPropagation();
+                void deletePolicyCheckpoint(checkpoint.id);
+            });
+            row.append(remove);
+        } else {
+            const spacer = document.createElement("span");
+            spacer.className = "checkpoint-menu-delete-spacer";
+            row.append(spacer);
+        }
+        checkpointMenu.append(row);
+    }
+    checkpointMenuLabel.textContent = checkpointSelect.selectedOptions[0]?.textContent ?? "Scripted preview";
+}
+
+async function deletePolicyCheckpoint(checkpoint: string): Promise<void> {
+    const item = availablePolicyCheckpoints.find((candidate) => candidate.id === checkpoint);
+    const label = item?.label ?? checkpoint;
     if (!window.confirm(`Delete checkpoint “${label}”? This cannot be undone.`)) return;
-    checkpointDeleteButton.disabled = true;
     try {
         await trainingRequest("/checkpoints", {
             method: "DELETE",
             body: JSON.stringify({checkpoint}),
         });
+        availablePolicyCheckpoints = availablePolicyCheckpoints.filter((candidate) => candidate.id !== checkpoint);
+        if (checkpointSelect.value === checkpoint) checkpointSelect.value = activePolicyCheckpoint ?? "";
+        renderCheckpointMenu();
         trainingMessage.textContent = `Deleted ${label}. Historical reference policies remain protected.`;
-        await refreshCheckpoints();
         await refreshTrainingRuns();
     } catch (error) {
         trainingMessage.textContent = error instanceof Error ? error.message : "Could not delete checkpoint.";
@@ -1122,7 +1174,7 @@ async function loadPolicyCheckpoint(): Promise<void> {
             const expected = checkpoint ?? null;
             if (result.worker?.status === "ready" && (result.worker.checkpoint ?? null) === expected) {
                 activePolicyCheckpoint = expected;
-                updateCheckpointDeleteButton();
+                renderCheckpointMenu();
                 if (selection.hot_swap) {
                     setStatus("Trained policy active", "connected");
                 } else {
@@ -2888,8 +2940,7 @@ trainingRunSelect.addEventListener("change", () => {
     void refreshTrainingRuns(selectedTrainingRun);
 });
 checkpointLoadButton.addEventListener("click", () => void loadPolicyCheckpoint());
-checkpointDeleteButton.addEventListener("click", () => void deletePolicyCheckpoint());
-checkpointSelect.addEventListener("change", updateCheckpointDeleteButton);
+checkpointMenuButton.addEventListener("click", () => setCheckpointMenuOpen(checkpointMenu.hasAttribute("hidden")));
 simulationImage.addEventListener("click", handleSimulationClick);
 simulationImage.addEventListener("pointerdown", beginCameraDrag);
 simulationImage.addEventListener("mousedown", (event) => {
@@ -3188,6 +3239,7 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("pointerdown", (event) => {
     const target = event.target as Node;
     if (!sceneContextMenu.hidden && !sceneContextMenu.contains(target)) closeSceneContextMenu();
+    if (!checkpointMenu.hidden && !checkpointPicker.contains(target)) setCheckpointMenuOpen(false);
     if (!sceneAccountPanel.hidden && !sceneAccountPanel.contains(target) && !sceneAccountButton.contains(target)) {
         setSceneAccountOpen(false);
     }
