@@ -834,6 +834,7 @@ let editorLogsLoading = false;
 let currentImageUrl: string | null = null;
 let lastFocusedElement: HTMLElement | null = null;
 let isPaused = false;
+let pendingPauseState: boolean | null = null;
 let editorPreviewActive = false;
 let draggedSceneAsset: string | null = null;
 let previewCamera: {azimuth: number; elevation: number; distance: number; lookat: number[]} | null = null;
@@ -2518,6 +2519,7 @@ function isaacScenePayload(): SceneAsset[] {
 function togglePause(): void {
     const nextPaused = !isPaused;
     if (!sendSimulationCommand({type: "set_paused", paused: nextPaused})) return;
+    pendingPauseState = nextPaused;
     isPaused = nextPaused;
     updatePlaybackButton();
     setStatus(isPaused ? "Simulation stopped" : "Simulation running", "connected");
@@ -2726,6 +2728,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
 
         socket = null;
         isPaused = false;
+        pendingPauseState = null;
         updatePlaybackButton();
         resetCameraButton.disabled = true;
         startButton.disabled = false;
@@ -2771,6 +2774,13 @@ function handleTextMessage(message: string): void {
         const data = JSON.parse(message);
 
         if (data.type === "frame_metadata") {
+            if (typeof data.paused === "boolean") {
+                if (pendingPauseState === data.paused) pendingPauseState = null;
+                if (pendingPauseState === null && data.paused !== isPaused) {
+                    isPaused = data.paused;
+                    updatePlaybackButton();
+                }
+            }
             if (data.render_camera) renderCamera = data.render_camera;
             if (data.camera && selectedSimulationEngine === "mujoco") previewCamera = data.camera;
             if (selectedSceneAsset >= 0) renderSceneGizmo();
