@@ -983,6 +983,24 @@ function chartPoints(values: number[], left: number, top: number, width: number,
     }).join(" ");
 }
 
+function sampleTrainingMetrics(metrics: TrainingMetric[], maximum = 160): TrainingMetric[] {
+    if (metrics.length <= maximum) return metrics;
+    return Array.from({length: maximum}, (_, index) => {
+        const sourceIndex = Math.round(index * (metrics.length - 1) / (maximum - 1));
+        return metrics[sourceIndex];
+    });
+}
+
+function chartMarkers(points: string[], radius: number, color: string): string {
+    const visiblePoints = points.length <= 60
+        ? points
+        : [points[0], points.at(-1)!];
+    return visiblePoints.map((point) => {
+        const [x, y] = point.split(",");
+        return `<circle cx="${x}" cy="${y}" r="${radius}" fill="${color}"/>`;
+    }).join("");
+}
+
 function renderTrainingRun(run: TrainingRun | null): void {
     if (!run) {
         trainingStatus.textContent = "Idle";
@@ -1005,19 +1023,22 @@ function renderTrainingRun(run: TrainingRun | null): void {
     trainingStartButton.disabled = active;
     trainingCheckpoints.textContent = run.checkpoints.length ? run.checkpoints.join(" · ") : "None yet";
     if (run.status.error) trainingMessage.textContent = run.status.error;
-    const rewards = run.metrics.map((metric) => metric.reward_mean);
-    const losses = run.metrics.map((metric) => metric.vf_error_after);
+    const plottedMetrics = sampleTrainingMetrics(run.metrics);
+    const rewards = plottedMetrics.map((metric) => metric.reward_mean);
+    const losses = plottedMetrics.map((metric) => metric.vf_error_after);
     const rewardPoints = chartPoints(rewards, 52, 22, 564, 164).split(" ").filter(Boolean);
     const lossPoints = chartPoints(losses, 52, 22, 564, 164).split(" ").filter(Boolean);
+    const firstIteration = plottedMetrics[0]?.iteration ?? 0;
+    const lastIteration = plottedMetrics.at(-1)?.iteration ?? 0;
     trainingChart.innerHTML = `
       <path d="M48 18V190H620" fill="none" stroke="#3f3f46" stroke-width="1"/>
       <path d="M48 61H620M48 104H620M48 147H620" fill="none" stroke="#27272a" stroke-width="1"/>
       <polyline points="${rewardPoints.join(" ")}" fill="none" stroke="#a3e635" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-      ${rewardPoints.map((point) => `<circle cx="${point.split(",")[0]}" cy="${point.split(",")[1]}" r="4" fill="#a3e635"/>`).join("")}
+      ${chartMarkers(rewardPoints, 4, "#a3e635")}
       <polyline points="${lossPoints.join(" ")}" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      ${lossPoints.map((point) => `<circle cx="${point.split(",")[0]}" cy="${point.split(",")[1]}" r="3" fill="#60a5fa"/>`).join("")}
-      <text x="48" y="210" fill="#71717a" font-size="12">Iteration 1</text>
-      <text x="620" y="210" text-anchor="end" fill="#71717a" font-size="12">${run.metrics.length || 0}</text>`;
+      ${chartMarkers(lossPoints, 3, "#60a5fa")}
+      <text x="48" y="210" fill="#71717a" font-size="12">Iteration ${firstIteration}</text>
+      <text x="620" y="210" text-anchor="end" fill="#71717a" font-size="12">${lastIteration}</text>`;
 }
 
 async function refreshTrainingRuns(preferred = selectedTrainingRun): Promise<void> {
