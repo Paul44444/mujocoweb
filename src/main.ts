@@ -128,6 +128,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <div id="checkpointToolbar" class="checkpoint-toolbar" aria-label="Isaac policy checkpoint">
               <select id="checkpointSelect" aria-label="Policy checkpoint"><option value="">Scripted preview</option></select>
               <button id="checkpointLoadButton" class="setup-button scene-toolbar-button" type="button">Load policy</button>
+              <button id="checkpointDeleteButton" class="setup-button scene-toolbar-button scene-delete-button" type="button" aria-label="Delete selected checkpoint" title="Delete selected checkpoint" disabled>🗑</button>
             </div>
             <button id="setupButton" class="setup-button" type="button" aria-haspopup="dialog" aria-controls="setupPanel">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -641,6 +642,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     </header>
     <p id="trainingSafety" class="training-safety">Fine-tunes a private copy of the stable Relocate checkpoint. The reference checkpoint is never overwritten.</p>
     <div class="training-controls">
+      <label>Checkpoint name<input id="trainingName" type="text" maxlength="48" placeholder="Automatic name" /></label>
       <label>Iterations<input id="trainingIterations" type="number" min="1" max="500" value="10" /></label>
       <label id="trainingTrajectoriesLabel">Trajectories<input id="trainingTrajectories" type="number" min="1" max="8" value="3" /></label>
       <label id="trainingHorizonLabel">Horizon<input id="trainingHorizon" type="number" min="20" max="500" value="200" /></label>
@@ -678,6 +680,7 @@ const trainingCloseButton = document.querySelector<HTMLButtonElement>("#training
 const trainingStartButton = document.querySelector<HTMLButtonElement>("#trainingStartButton")!;
 const trainingStopButton = document.querySelector<HTMLButtonElement>("#trainingStopButton")!;
 const trainingRunSelect = document.querySelector<HTMLSelectElement>("#trainingRunSelect")!;
+const trainingName = document.querySelector<HTMLInputElement>("#trainingName")!;
 const trainingEngineLabel = document.querySelector<HTMLElement>("#trainingEngineLabel")!;
 const trainingSafety = document.querySelector<HTMLElement>("#trainingSafety")!;
 const trainingIterations = document.querySelector<HTMLInputElement>("#trainingIterations")!;
@@ -772,6 +775,7 @@ const sceneDeleteButton = document.querySelector<HTMLButtonElement>("#sceneDelet
 const checkpointToolbar = document.querySelector<HTMLElement>("#checkpointToolbar")!;
 const checkpointSelect = document.querySelector<HTMLSelectElement>("#checkpointSelect")!;
 const checkpointLoadButton = document.querySelector<HTMLButtonElement>("#checkpointLoadButton")!;
+const checkpointDeleteButton = document.querySelector<HTMLButtonElement>("#checkpointDeleteButton")!;
 const sceneGizmo = document.querySelector<HTMLElement>("#sceneGizmo")!;
 const sceneGizmoAxes = document.querySelector<SVGSVGElement>("#sceneGizmoAxes")!;
 const sceneGizmoName = document.querySelector<HTMLElement>("#sceneGizmoName")!;
@@ -925,15 +929,16 @@ type TrainingMetric = {
 type TrainingRun = {
     id: string;
     status: {status: string; iteration?: number; error?: string; latest_checkpoint?: string};
-    config: {engine?: SimulationEngine; iterations?: number; trajectories?: number; horizon?: number; num_envs?: number; seed?: number};
+    config: {name?: string; engine?: SimulationEngine; iterations?: number; trajectories?: number; horizon?: number; num_envs?: number; seed?: number};
     metrics: TrainingMetric[];
     checkpoints: string[];
 };
-type IsaacCheckpoint = {id: string; run_id: string; name: string; label: string; modified_at: number};
+type IsaacCheckpoint = {id: string; run_id: string; name: string; label: string; modified_at: number; deletable: boolean};
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
 let selectedTrainingRun = "";
 let trainingPollTimer: number | null = null;
+let activePolicyCheckpoint: string | null = null;
 const sceneAssetsByEngine: Record<SimulationEngine, SceneAsset[]> = {
     isaaclab: [{id: "training-cube", asset: "box", position: [0.45, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
     mujoco: [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
@@ -1019,7 +1024,7 @@ async function refreshTrainingRuns(preferred = selectedTrainingRun): Promise<voi
             return;
         }
         for (const run of result.runs) {
-            trainingRunSelect.append(new Option(`${run.id} · ${run.status.status}`, run.id));
+            trainingRunSelect.append(new Option(`${run.config.name || run.id} · ${run.status.status}`, run.id));
         }
         const run = result.runs.find((item) => item.id === preferred) ?? result.runs[0];
         selectedTrainingRun = run.id;
@@ -1037,16 +1042,51 @@ async function refreshCheckpoints(): Promise<void> {
     const resumeValue = trainingResumeSelect.value;
     try {
         const result = await trainingRequest<{checkpoints: IsaacCheckpoint[]; selected?: string | null}>("/checkpoints");
-        const options = result.checkpoints.map((checkpoint) => new Option(checkpoint.label, checkpoint.id));
+        activePolicyCheckpoint = result.selected ?? null;
+        const options = result.checkpoints.map((checkpoint) => {
+            const option = new Option(checkpoint.label, checkpoint.id);
+            option.dataset.deletable = String(checkpoint.deletable);
+            return option;
+        });
         checkpointSelect.replaceChildren(new Option("Scripted preview", ""), ...options.map((option) => option.cloneNode(true) as HTMLOptionElement));
         trainingResumeSelect.replaceChildren(new Option("From scratch", ""), ...options);
-        checkpointSelect.value = result.selected ?? playbackValue;
-        if (!checkpointSelect.value && result.selected) checkpointSelect.value = result.selected;
+        checkpointSelect.value = playbackValue || result.selected || "";
+        if (!checkpointSelect.value && playbackValue) checkpointSelect.value = result.selected ?? "";
         trainingResumeSelect.value = resumeValue;
         checkpointLoadButton.disabled = false;
+        updateCheckpointDeleteButton();
     } catch (error) {
         checkpointLoadButton.disabled = true;
         trainingMessage.textContent = error instanceof Error ? error.message : "Could not load checkpoints.";
+    }
+}
+
+function updateCheckpointDeleteButton(): void {
+    const option = checkpointSelect.selectedOptions[0];
+    const isActive = Boolean(checkpointSelect.value && checkpointSelect.value === activePolicyCheckpoint);
+    checkpointDeleteButton.disabled = !checkpointSelect.value || option?.dataset.deletable !== "true" || isActive;
+    checkpointDeleteButton.title = isActive
+        ? "Load another policy before deleting the active checkpoint"
+        : "Delete selected checkpoint";
+}
+
+async function deletePolicyCheckpoint(): Promise<void> {
+    const checkpoint = checkpointSelect.value;
+    if (!checkpoint) return;
+    const label = checkpointSelect.selectedOptions[0]?.textContent ?? checkpoint;
+    if (!window.confirm(`Delete checkpoint “${label}”? This cannot be undone.`)) return;
+    checkpointDeleteButton.disabled = true;
+    try {
+        await trainingRequest("/checkpoints", {
+            method: "DELETE",
+            body: JSON.stringify({checkpoint}),
+        });
+        trainingMessage.textContent = `Deleted ${label}. Historical reference policies remain protected.`;
+        await refreshCheckpoints();
+        await refreshTrainingRuns();
+    } catch (error) {
+        trainingMessage.textContent = error instanceof Error ? error.message : "Could not delete checkpoint.";
+        await refreshCheckpoints();
     }
 }
 
@@ -1081,6 +1121,8 @@ async function loadPolicyCheckpoint(): Promise<void> {
             }>("/checkpoints/status");
             const expected = checkpoint ?? null;
             if (result.worker?.status === "ready" && (result.worker.checkpoint ?? null) === expected) {
+                activePolicyCheckpoint = expected;
+                updateCheckpointDeleteButton();
                 if (selection.hot_swap) {
                     setStatus("Trained policy active", "connected");
                 } else {
@@ -1151,6 +1193,7 @@ async function startTraining(): Promise<void> {
             body: JSON.stringify({
                 engine: selectedSimulationEngine,
                 user: sceneUserInput.value.trim() || "Guest",
+                name: trainingName.value.trim() || null,
                 iterations: Number(trainingIterations.value),
                 trajectories: Number(trainingTrajectories.value),
                 horizon: Number(trainingHorizon.value),
@@ -2845,6 +2888,8 @@ trainingRunSelect.addEventListener("change", () => {
     void refreshTrainingRuns(selectedTrainingRun);
 });
 checkpointLoadButton.addEventListener("click", () => void loadPolicyCheckpoint());
+checkpointDeleteButton.addEventListener("click", () => void deletePolicyCheckpoint());
+checkpointSelect.addEventListener("change", updateCheckpointDeleteButton);
 simulationImage.addEventListener("click", handleSimulationClick);
 simulationImage.addEventListener("pointerdown", beginCameraDrag);
 simulationImage.addEventListener("mousedown", (event) => {
