@@ -125,6 +125,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               <input id="sceneNameInput" class="scene-toolbar-name" value="DAPG Relocate Start" maxlength="48" aria-label="Scene name for saving" />
               <button id="sceneSaveButton" class="setup-button scene-toolbar-button" type="button">Save</button>
             </div>
+            <div id="checkpointToolbar" class="checkpoint-toolbar" aria-label="Isaac policy checkpoint">
+              <select id="checkpointSelect" aria-label="Policy checkpoint"><option value="">Scripted preview</option></select>
+              <button id="checkpointLoadButton" class="setup-button scene-toolbar-button" type="button">Load policy</button>
+            </div>
             <button id="setupButton" class="setup-button" type="button" aria-haspopup="dialog" aria-controls="setupPanel">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <circle cx="12" cy="12" r="3"/>
@@ -641,6 +645,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <label id="trainingTrajectoriesLabel">Trajectories<input id="trainingTrajectories" type="number" min="1" max="8" value="3" /></label>
       <label id="trainingHorizonLabel">Horizon<input id="trainingHorizon" type="number" min="20" max="500" value="200" /></label>
       <label id="trainingEnvironmentsLabel" hidden>Environments<select id="trainingEnvironments"><option value="16">16</option><option value="32" selected>32</option><option value="64">64</option></select></label>
+      <label id="trainingResumeLabel" hidden>Continue from<select id="trainingResumeSelect"><option value="">From scratch</option></select></label>
       <label>Seed<input id="trainingSeed" type="number" min="0" value="123" /></label>
     </div>
     <div class="training-actions">
@@ -682,6 +687,8 @@ const trainingTrajectoriesLabel = document.querySelector<HTMLElement>("#training
 const trainingHorizonLabel = document.querySelector<HTMLElement>("#trainingHorizonLabel")!;
 const trainingEnvironmentsLabel = document.querySelector<HTMLElement>("#trainingEnvironmentsLabel")!;
 const trainingEnvironments = document.querySelector<HTMLSelectElement>("#trainingEnvironments")!;
+const trainingResumeLabel = document.querySelector<HTMLElement>("#trainingResumeLabel")!;
+const trainingResumeSelect = document.querySelector<HTMLSelectElement>("#trainingResumeSelect")!;
 const trainingSeed = document.querySelector<HTMLInputElement>("#trainingSeed")!;
 const trainingMessage = document.querySelector<HTMLParagraphElement>("#trainingMessage")!;
 const trainingStatus = document.querySelector<HTMLElement>("#trainingStatus")!;
@@ -761,6 +768,9 @@ const sceneAccountMessage = document.querySelector<HTMLParagraphElement>("#scene
 const sceneSelect = document.querySelector<HTMLSelectElement>("#sceneSelect")!;
 const sceneLoadButton = document.querySelector<HTMLButtonElement>("#sceneLoadButton")!;
 const sceneDeleteButton = document.querySelector<HTMLButtonElement>("#sceneDeleteButton")!;
+const checkpointToolbar = document.querySelector<HTMLElement>("#checkpointToolbar")!;
+const checkpointSelect = document.querySelector<HTMLSelectElement>("#checkpointSelect")!;
+const checkpointLoadButton = document.querySelector<HTMLButtonElement>("#checkpointLoadButton")!;
 const sceneGizmo = document.querySelector<HTMLElement>("#sceneGizmo")!;
 const sceneGizmoAxes = document.querySelector<SVGSVGElement>("#sceneGizmoAxes")!;
 const sceneGizmoName = document.querySelector<HTMLElement>("#sceneGizmoName")!;
@@ -917,6 +927,7 @@ type TrainingRun = {
     metrics: TrainingMetric[];
     checkpoints: string[];
 };
+type IsaacCheckpoint = {id: string; run_id: string; name: string; label: string; modified_at: number};
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
 let selectedTrainingRun = "";
@@ -1012,8 +1023,49 @@ async function refreshTrainingRuns(preferred = selectedTrainingRun): Promise<voi
         selectedTrainingRun = run.id;
         trainingRunSelect.value = run.id;
         renderTrainingRun(run);
+        if (selectedSimulationEngine === "isaaclab" && run.checkpoints.length) void refreshCheckpoints();
     } catch (error) {
         trainingMessage.textContent = error instanceof Error ? error.message : "Could not load training runs.";
+    }
+}
+
+async function refreshCheckpoints(): Promise<void> {
+    if (selectedSimulationEngine !== "isaaclab") return;
+    const playbackValue = checkpointSelect.value;
+    const resumeValue = trainingResumeSelect.value;
+    try {
+        const result = await trainingRequest<{checkpoints: IsaacCheckpoint[]; selected?: string | null}>("/checkpoints");
+        const options = result.checkpoints.map((checkpoint) => new Option(checkpoint.label, checkpoint.id));
+        checkpointSelect.replaceChildren(new Option("Scripted preview", ""), ...options.map((option) => option.cloneNode(true) as HTMLOptionElement));
+        trainingResumeSelect.replaceChildren(new Option("From scratch", ""), ...options);
+        checkpointSelect.value = result.selected ?? playbackValue;
+        if (!checkpointSelect.value && result.selected) checkpointSelect.value = result.selected;
+        trainingResumeSelect.value = resumeValue;
+        checkpointLoadButton.disabled = false;
+    } catch (error) {
+        checkpointLoadButton.disabled = true;
+        trainingMessage.textContent = error instanceof Error ? error.message : "Could not load checkpoints.";
+    }
+}
+
+async function loadPolicyCheckpoint(): Promise<void> {
+    checkpointLoadButton.disabled = true;
+    const checkpoint = checkpointSelect.value || null;
+    setStatus(checkpoint ? "Loading trained policy — Isaac Lab is restarting…" : "Returning to scripted preview…", "connecting");
+    try {
+        await trainingRequest("/checkpoints/select", {
+            method: "POST",
+            body: JSON.stringify({checkpoint}),
+        });
+        captureEvent("policy_checkpoint_loaded", {checkpoint: checkpoint ? "trained" : "scripted"});
+        const previous = socket;
+        socket = null;
+        previous?.close(1000, "Loading Isaac policy checkpoint");
+        window.setTimeout(() => connectToSimulation(false, true), 1800);
+    } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Could not load policy checkpoint.", "error");
+    } finally {
+        window.setTimeout(() => { checkpointLoadButton.disabled = false; }, 2000);
     }
 }
 
@@ -1022,6 +1074,7 @@ function setTrainingOpen(open: boolean): void {
     trainingButton.setAttribute("aria-expanded", String(open));
     if (open) {
         void refreshTrainingRuns();
+        void refreshCheckpoints();
         if (trainingPollTimer === null) trainingPollTimer = window.setInterval(() => void refreshTrainingRuns(), 3000);
     } else if (trainingPollTimer !== null) {
         window.clearInterval(trainingPollTimer);
@@ -1038,6 +1091,7 @@ function updateTrainingUi(): void {
     trainingTrajectoriesLabel.hidden = usesIsaac;
     trainingHorizonLabel.hidden = usesIsaac;
     trainingEnvironmentsLabel.hidden = !usesIsaac;
+    trainingResumeLabel.hidden = !usesIsaac;
     trainingIterations.max = usesIsaac ? "500" : "25";
     if (!usesIsaac && Number(trainingIterations.value) > 25) trainingIterations.value = "10";
     trainingStartButton.textContent = usesIsaac ? "Start Isaac training" : "Start new training run";
@@ -1062,6 +1116,7 @@ async function startTraining(): Promise<void> {
                 trajectories: Number(trainingTrajectories.value),
                 horizon: Number(trainingHorizon.value),
                 num_envs: Number(trainingEnvironments.value),
+                resume_checkpoint: selectedSimulationEngine === "isaaclab" ? trainingResumeSelect.value || null : null,
                 seed: Number(trainingSeed.value),
             }),
         });
@@ -1070,6 +1125,7 @@ async function startTraining(): Promise<void> {
             engine: selectedSimulationEngine,
             iterations: Number(trainingIterations.value),
             environments: selectedSimulationEngine === "isaaclab" ? Number(trainingEnvironments.value) : null,
+            resumed: selectedSimulationEngine === "isaaclab" && Boolean(trainingResumeSelect.value),
         });
         trainingMessage.textContent = `Training ${run.id} started. You may close this panel; the backend continues.`;
         await refreshTrainingRuns(run.id);
@@ -2185,9 +2241,11 @@ function updateEngineUi(): void {
     cameraHelp.textContent = "Left-drag to orbit · Middle-drag or Shift-drag to pan · Scroll or pinch to zoom";
     trainingButton.disabled = false;
     trainingButton.title = usesMujoco ? "Open DAPG training" : "Open parallel Isaac Lab training";
+    checkpointToolbar.hidden = usesMujoco;
     selectedTrainingRun = "";
     updateTrainingUi();
     if (!trainingPanel.hidden) void refreshTrainingRuns();
+    if (!usesMujoco) void refreshCheckpoints();
     resetCameraButton.disabled = !socket || socket.readyState !== WebSocket.OPEN;
     updateEditorEngineUi();
 }
@@ -2736,6 +2794,7 @@ trainingRunSelect.addEventListener("change", () => {
     selectedTrainingRun = trainingRunSelect.value;
     void refreshTrainingRuns(selectedTrainingRun);
 });
+checkpointLoadButton.addEventListener("click", () => void loadPolicyCheckpoint());
 simulationImage.addEventListener("click", handleSimulationClick);
 simulationImage.addEventListener("pointerdown", beginCameraDrag);
 simulationImage.addEventListener("mousedown", (event) => {
@@ -3052,6 +3111,7 @@ window.addEventListener("load", () => {
         await refreshPublishedBackendUrl();
         await refreshEditorLogs();
         await loadSceneList(false);
+        await refreshCheckpoints();
         if (!simulationImage.classList.contains("visible") && !socket) connectToSimulation(false, true);
     })();
 });
