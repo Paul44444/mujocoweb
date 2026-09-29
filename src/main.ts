@@ -4,6 +4,9 @@ import {python} from "@codemirror/lang-python";
 import {defaultHighlightStyle, syntaxHighlighting} from "@codemirror/language";
 import {EditorState} from "@codemirror/state";
 import {EditorView, keymap} from "@codemirror/view";
+import {captureEvent, initializeAnalytics} from "./analytics";
+
+initializeAnalytics();
 
 const RENDER_BACKEND_URL = "https://mujocoweb-backend.onrender.com";
 // A trycloudflare.com quick tunnel is temporary and must never be the default.
@@ -1063,6 +1066,11 @@ async function startTraining(): Promise<void> {
             }),
         });
         selectedTrainingRun = run.id;
+        captureEvent("training_started", {
+            engine: selectedSimulationEngine,
+            iterations: Number(trainingIterations.value),
+            environments: selectedSimulationEngine === "isaaclab" ? Number(trainingEnvironments.value) : null,
+        });
         trainingMessage.textContent = `Training ${run.id} started. You may close this panel; the backend continues.`;
         await refreshTrainingRuns(run.id);
     } catch (error) {
@@ -1241,6 +1249,7 @@ async function loadScene(): Promise<void> {
         renderSceneGizmo();
         reconnectSceneEditor();
         sceneMessage.textContent = `${result.name} loaded for ${user}.`;
+        captureEvent("scene_loaded", {engine: selectedSimulationEngine, asset_count: sceneAssets.length});
         flashSceneButton(sceneLoadButton, "Loaded ✓", "Load");
     } catch (error) {
         sceneMessage.textContent = error instanceof Error ? error.message : "Could not load scene.";
@@ -1266,6 +1275,7 @@ async function deleteScene(): Promise<void> {
         if (sceneNameInput.value === name) sceneNameInput.value = "Untitled scene";
         await loadSceneList(false);
         sceneMessage.textContent = `${name} was deleted.`;
+        captureEvent("scene_deleted", {engine: selectedSimulationEngine});
         flashSceneButton(sceneDeleteButton, "Deleted ✓", "Delete");
     } catch (error) {
         sceneMessage.textContent = error instanceof Error ? error.message : "Could not delete scene.";
@@ -1292,6 +1302,7 @@ async function saveScene(): Promise<void> {
         await loadSceneList(false);
         sceneSelect.value = name;
         sceneMessage.textContent = `${name} saved for ${user}.`;
+        captureEvent("scene_saved", {engine: selectedSimulationEngine, asset_count: sceneAssets.length});
         flashSceneButton(sceneSaveButton, "Saved ✓", "Save");
     } catch (error) {
         sceneMessage.textContent = error instanceof Error ? error.message : "Could not save scene.";
@@ -2588,6 +2599,12 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         startButton.disabled = false;
         updatePlaybackButton();
         resetCameraButton.disabled = false;
+        captureEvent(editorPreview ? "scene_editor_opened" : "simulation_started", {
+            engine: selectedSimulationEngine,
+            task: selectedTaskId,
+            edited_scene: runEditedScene,
+            fallback: fallbackAttempt,
+        });
         if (selectedSimulationEngine === "isaaclab") {
             sendSimulationCommand({type: "scene_replace", assets: isaacScenePayload()});
         }
@@ -2922,6 +2939,7 @@ simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 simulationEngineSelect.addEventListener("change", () => {
     selectedSimulationEngine = simulationEngineSelect.value === "mujoco" ? "mujoco" : "isaaclab";
+    captureEvent("simulation_engine_changed", {engine: selectedSimulationEngine});
     activateEngineScene(selectedSimulationEngine);
     resetSimulationForConfiguration();
     updateEngineUi();
