@@ -649,7 +649,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <label>Iterations<input id="trainingIterations" type="number" min="1" max="500" value="10" /></label>
       <label id="trainingTrajectoriesLabel">Trajectories<input id="trainingTrajectories" type="number" min="1" max="8" value="3" /></label>
       <label id="trainingHorizonLabel">Horizon<input id="trainingHorizon" type="number" min="20" max="500" value="200" /></label>
-      <label id="trainingEnvironmentsLabel" hidden>Environments<select id="trainingEnvironments"><option value="16">16</option><option value="32" selected>32</option><option value="64">64</option></select></label>
+      <label id="trainingEnvironmentsLabel" hidden>Parallel environments<select id="trainingEnvironments"><option value="16">16</option><option value="32">32</option><option value="64">64</option><option value="128">128</option><option value="256" selected>256 · recommended</option><option value="512">512 · experimental</option></select></label>
       <label id="trainingResumeLabel" hidden>Continue training from checkpoint<select id="trainingResumeSelect"><option value="">From scratch</option></select></label>
       <label>Seed<input id="trainingSeed" type="number" min="0" value="123" /></label>
     </div>
