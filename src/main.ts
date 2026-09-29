@@ -2520,15 +2520,16 @@ function togglePause(): void {
     if (!sendSimulationCommand({type: "set_paused", paused: nextPaused})) return;
     isPaused = nextPaused;
     updatePlaybackButton();
-    setStatus(isPaused ? "Simulation paused" : "Simulation running", "connected");
+    setStatus(isPaused ? "Simulation stopped" : "Simulation running", "connected");
 }
 
 function updatePlaybackButton(): void {
     const icon = startButton.querySelector<HTMLElement>(".playback-icon")!;
     const label = startButton.querySelector<HTMLElement>(".playback-label")!;
     const connected = socket?.readyState === WebSocket.OPEN;
-    icon.className = `playback-icon ${connected && !editorPreviewActive && !isPaused ? "pause-icon" : "play-icon"}`;
-    label.textContent = connected && !editorPreviewActive ? (isPaused ? "Resume" : "Pause") : "Start simulation";
+    const runningSession = connected && (!editorPreviewActive || selectedSimulationEngine === "isaaclab");
+    icon.className = `playback-icon ${runningSession && !isPaused ? "pause-icon" : "play-icon"}`;
+    label.textContent = runningSession && !isPaused ? "Stop simulation" : "Start simulation";
     startButton.setAttribute("aria-label", label.textContent);
     sceneEditButton.hidden = !connected || editorPreviewActive;
 }
@@ -2549,7 +2550,7 @@ function returnToSceneEditor(): void {
 
 async function handlePlaybackButton(): Promise<void> {
     if (socket?.readyState === WebSocket.OPEN) {
-        if (editorPreviewActive) {
+        if (editorPreviewActive && selectedSimulationEngine !== "isaaclab") {
             editorPreviewActive = false;
             socket.close();
             window.setTimeout(() => connectToSimulation(false, false, true), 150);
