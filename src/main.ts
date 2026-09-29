@@ -705,6 +705,7 @@ const simulationImage =
 
 const placeholder =
     document.querySelector<HTMLDivElement>("#placeholder")!;
+const placeholderMessage = placeholder.querySelector<HTMLParagraphElement>("p")!;
 const sceneDropPreview = document.querySelector<HTMLDivElement>("#sceneDropPreview")!;
 const sceneHoverIndicator = document.querySelector<HTMLDivElement>("#sceneHoverIndicator")!;
 const sceneContextMenu = document.querySelector<HTMLDivElement>("#sceneContextMenu")!;
@@ -1052,6 +1053,11 @@ async function loadPolicyCheckpoint(): Promise<void> {
     checkpointLoadButton.disabled = true;
     const checkpoint = checkpointSelect.value || null;
     setStatus(checkpoint ? "Loading trained policy — Isaac Lab is restarting…" : "Returning to scripted preview…", "connecting");
+    startButton.disabled = true;
+    resetCameraButton.disabled = true;
+    simulationImage.classList.remove("visible");
+    placeholder.classList.remove("hidden");
+    placeholderMessage.textContent = "Starting Isaac Lab and loading policy…";
     try {
         await trainingRequest("/checkpoints/select", {
             method: "POST",
@@ -1061,11 +1067,29 @@ async function loadPolicyCheckpoint(): Promise<void> {
         const previous = socket;
         socket = null;
         previous?.close(1000, "Loading Isaac policy checkpoint");
-        window.setTimeout(() => connectToSimulation(false, true), 1800);
+        const deadline = Date.now() + 180_000;
+        while (Date.now() < deadline) {
+            const result = await trainingRequest<{
+                selected?: string | null;
+                worker?: {status?: string; checkpoint?: string | null; error?: string};
+            }>("/checkpoints/status");
+            const expected = checkpoint ?? null;
+            if (result.worker?.status === "ready" && (result.worker.checkpoint ?? null) === expected) {
+                placeholderMessage.textContent = "Policy ready — connecting viewer…";
+                connectToSimulation(false, true);
+                return;
+            }
+            if (result.worker?.status === "failed" || result.worker?.status === "error") {
+                throw new Error(result.worker.error || "Isaac Lab could not load the policy.");
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        }
+        throw new Error("Isaac Lab did not become ready within three minutes.");
     } catch (error) {
         setStatus(error instanceof Error ? error.message : "Could not load policy checkpoint.", "error");
+        placeholderMessage.textContent = "Policy loading failed. Choose a checkpoint and try again.";
     } finally {
-        window.setTimeout(() => { checkpointLoadButton.disabled = false; }, 2000);
+        checkpointLoadButton.disabled = false;
     }
 }
 
@@ -2205,6 +2229,7 @@ function resetSimulationForConfiguration(): void {
     simulationImage.removeAttribute("src");
     simulationImage.classList.remove("visible");
     placeholder.classList.remove("hidden");
+    placeholderMessage.textContent = "Press \"Start Simulation\" to begin";
     if (currentImageUrl) {
         URL.revokeObjectURL(currentImageUrl);
         currentImageUrl = null;
