@@ -177,7 +177,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           </div>
 
           <aside id="visionSensorPanel" class="vision-sensor-panel" hidden aria-label="Robot perception camera">
-            <header><span>Robot RGB-D camera</span><small>Pose-estimator input</small></header>
+            <header><span>Robot stereo RGB</span><small id="visionPoseValue">Estimating position…</small></header>
             <img id="visionSensorImage" alt="RGB image from the fixed robot perception camera" />
           </aside>
 
@@ -719,6 +719,7 @@ const simulationImage =
     document.querySelector<HTMLImageElement>("#simulationImage")!;
 const visionSensorPanel = document.querySelector<HTMLElement>("#visionSensorPanel")!;
 const visionSensorImage = document.querySelector<HTMLImageElement>("#visionSensorImage")!;
+const visionPoseValue = document.querySelector<HTMLElement>("#visionPoseValue")!;
 let lastVisionFrameRefresh = 0;
 
 const placeholder =
@@ -1382,7 +1383,7 @@ function updateTrainingUi(): void {
     trainingEngineLabel.textContent = usesIsaac ? "NVIDIA Isaac Lab · RSL-RL PPO" : "MuJoCo · DAPG";
     trainingSafety.textContent = usesIsaac
         ? selectedIsaacTask === "vision"
-            ? "Trains the separate Franka Vision task. The actor sees a noisy pose estimate plus confidence instead of the exact cube position; State-task checkpoints remain untouched."
+            ? "Trains the separate Franka Vision task with a noisy pose-estimator proxy. Playback triangulates XYZ from real stereo camera pixels; existing State policies remain compatible."
             : "Runs the official Franka Cube Lift trainer headlessly on the GPU. Checkpoints are isolated from the live viewer and Vision policies."
         : "Fine-tunes a private copy of the stable Relocate checkpoint. The reference checkpoint is never overwritten.";
     trainingTrajectoriesLabel.hidden = usesIsaac;
@@ -2485,7 +2486,7 @@ function applyConfiguration(): void {
     }
     interactionHint.textContent = selectedSimulationEngine === "isaaclab"
         ? selectedIsaacTask === "vision"
-            ? "Vision task · actor receives a noisy camera-pose estimate and confidence, never the exact cube position"
+            ? "Vision task · cube XYZ is triangulated from two RGB cameras, never read directly by the actor"
             : "Isaac Lab GPU preview · state-based Franka Cube Lift"
         : task.interactive
             ? "Click on the simulation window to set target positions for the robotic hand"
@@ -3081,6 +3082,10 @@ function handleTextMessage(message: string): void {
             if (selectedSimulationEngine === "isaaclab" && selectedIsaacTask === "vision" && Date.now() - lastVisionFrameRefresh > 250) {
                 lastVisionFrameRefresh = Date.now();
                 visionSensorImage.src = `${backendHttpUrl("/api/isaac/vision-frame")}?t=${lastVisionFrameRefresh}`;
+            }
+            if (Array.isArray(data.vision_estimated_position) && data.vision_estimated_position.length >= 3) {
+                const [x, y, z] = data.vision_estimated_position.map((value: number) => Number(value).toFixed(3));
+                visionPoseValue.textContent = `Estimated XYZ · ${x}, ${y}, ${z}`;
             }
             if (selectedSceneAsset >= 0) renderSceneGizmo();
             episodeValue.textContent = String(data.episode ?? "—");
