@@ -646,7 +646,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <p id="trainingSafety" class="training-safety">Fine-tunes a private copy of the stable Relocate checkpoint. The reference checkpoint is never overwritten.</p>
     <div class="training-controls">
       <label>Checkpoint name<input id="trainingName" type="text" maxlength="48" placeholder="Automatic name" /></label>
-      <label>Iterations<input id="trainingIterations" type="number" min="1" max="500" value="10" /></label>
+      <label>Iterations<input id="trainingIterations" type="number" min="1" step="1" value="10" /></label>
       <label id="trainingTrajectoriesLabel">Trajectories<input id="trainingTrajectories" type="number" min="1" max="8" value="3" /></label>
       <label id="trainingHorizonLabel">Horizon<input id="trainingHorizon" type="number" min="20" max="500" value="200" /></label>
       <label id="trainingEnvironmentsLabel" hidden>Parallel environments<select id="trainingEnvironments"><option value="16">16</option><option value="32">32</option><option value="64">64</option><option value="128">128</option><option value="256" selected>256 · recommended</option><option value="512">512 · experimental</option></select></label>
@@ -1251,7 +1251,8 @@ function updateTrainingUi(): void {
     trainingHorizonLabel.hidden = usesIsaac;
     trainingEnvironmentsLabel.hidden = !usesIsaac;
     trainingResumeLabel.hidden = !usesIsaac;
-    trainingIterations.max = usesIsaac ? "500" : "25";
+    if (usesIsaac) trainingIterations.removeAttribute("max");
+    else trainingIterations.max = "25";
     if (!usesIsaac && Number(trainingIterations.value) > 25) trainingIterations.value = "10";
     trainingStartButton.textContent = usesIsaac ? "Start Isaac training" : "Start new training run";
     trainingLossLabel.textContent = usesIsaac ? "Value loss" : "VF error";
