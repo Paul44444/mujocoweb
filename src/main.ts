@@ -944,6 +944,9 @@ let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
 let selectedTrainingRun = "";
 let trainingPollTimer: number | null = null;
+type ChartRange = {minimum: number; maximum: number};
+type TrainingChartState = {metrics: TrainingMetric[]; rewardRange: ChartRange; lossRange: ChartRange; left: number; top: number; width: number; height: number};
+let trainingChartState: TrainingChartState | null = null;
 let activePolicyCheckpoint: string | null = null;
 let availablePolicyCheckpoints: IsaacCheckpoint[] = [];
 const sceneAssetsByEngine: Record<SimulationEngine, SceneAsset[]> = {
@@ -971,16 +974,42 @@ async function trainingRequest<T>(path: string, options?: RequestInit): Promise<
     return response.json() as Promise<T>;
 }
 
-function chartPoints(values: number[], left: number, top: number, width: number, height: number): string {
-    if (!values.length) return "";
+function chartRange(values: number[]): ChartRange {
+    if (!values.length) return {minimum: 0, maximum: 1};
     const minimum = Math.min(...values);
     const maximum = Math.max(...values);
-    const range = Math.max(1e-9, maximum - minimum);
+    const padding = maximum === minimum ? Math.max(Math.abs(maximum) * 0.08, 0.5) : (maximum - minimum) * 0.08;
+    return {minimum: minimum - padding, maximum: maximum + padding};
+}
+
+function chartY(value: number, range: ChartRange, top: number, height: number): number {
+    return top + height - (value - range.minimum) / (range.maximum - range.minimum) * height;
+}
+
+function chartPoints(values: number[], range: ChartRange, left: number, top: number, width: number, height: number): string {
+    if (!values.length) return "";
     return values.map((value, index) => {
         const x = left + (values.length === 1 ? width / 2 : index * width / (values.length - 1));
-        const y = top + height - (value - minimum) / range * height;
+        const y = chartY(value, range, top, height);
         return `${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(" ");
+}
+
+function formatChartValue(value: number): string {
+    const absolute = Math.abs(value);
+    if (absolute >= 1000 || (absolute > 0 && absolute < 0.01)) return value.toExponential(1);
+    if (absolute >= 100) return value.toFixed(0);
+    if (absolute >= 10) return value.toFixed(1);
+    return value.toFixed(2);
+}
+
+function chartTicks(range: ChartRange, x: number, anchor: "start" | "end", color: string): string {
+    return Array.from({length: 5}, (_, index) => {
+        const ratio = index / 4;
+        const value = range.maximum - ratio * (range.maximum - range.minimum);
+        const y = 22 + ratio * 164;
+        return `<text x="${x}" y="${(y + 4).toFixed(1)}" text-anchor="${anchor}" fill="${color}" font-size="10">${formatChartValue(value)}</text>`;
+    }).join("");
 }
 
 function sampleTrainingMetrics(metrics: TrainingMetric[], maximum = 160): TrainingMetric[] {
@@ -1010,36 +1039,86 @@ function renderTrainingRun(run: TrainingRun | null): void {
         trainingCheckpoints.textContent = "None yet";
         trainingChart.innerHTML = `<text x="320" y="112" text-anchor="middle" fill="#71717a" font-size="15">Metrics appear after the first iteration</text>`;
         trainingStopButton.disabled = true;
+        trainingStopButton.textContent = "Stop";
+        trainingStopButton.dataset.action = "pause";
+        trainingStartButton.disabled = false;
+        trainingChartState = null;
         return;
     }
     const state = run.status.status;
     const active = state === "starting" || state === "training";
+    const paused = state === "paused";
     const latest = run.metrics.at(-1);
     trainingStatus.textContent = state[0]?.toUpperCase() + state.slice(1);
     trainingIteration.textContent = `${run.status.iteration ?? run.metrics.length} / ${run.config.iterations ?? "—"}`;
     trainingReward.textContent = latest ? latest.reward_mean.toFixed(3) : "—";
     trainingLoss.textContent = latest ? latest.vf_error_after.toFixed(4) : "—";
-    trainingStopButton.disabled = !active;
-    trainingStartButton.disabled = active;
+    trainingStopButton.disabled = !active && !paused;
+    trainingStopButton.textContent = paused ? "Continue" : "Stop";
+    trainingStopButton.dataset.action = paused ? "continue" : "pause";
+    trainingStartButton.disabled = active || paused;
     trainingCheckpoints.textContent = run.checkpoints.length ? run.checkpoints.join(" · ") : "None yet";
     if (run.status.error) trainingMessage.textContent = run.status.error;
     const plottedMetrics = sampleTrainingMetrics(run.metrics);
     const rewards = plottedMetrics.map((metric) => metric.reward_mean);
     const losses = plottedMetrics.map((metric) => metric.vf_error_after);
-    const rewardPoints = chartPoints(rewards, 52, 22, 564, 164).split(" ").filter(Boolean);
-    const lossPoints = chartPoints(losses, 52, 22, 564, 164).split(" ").filter(Boolean);
+    const rewardRange = chartRange(rewards);
+    const lossRange = chartRange(losses);
+    const plot = {left: 72, top: 22, width: 486, height: 164};
+    trainingChartState = plottedMetrics.length ? {metrics: plottedMetrics, rewardRange, lossRange, ...plot} : null;
+    const rewardPoints = chartPoints(rewards, rewardRange, plot.left, plot.top, plot.width, plot.height).split(" ").filter(Boolean);
+    const lossPoints = chartPoints(losses, lossRange, plot.left, plot.top, plot.width, plot.height).split(" ").filter(Boolean);
     const firstIteration = plottedMetrics[0]?.iteration ?? 0;
     const lastIteration = plottedMetrics.at(-1)?.iteration ?? 0;
     trainingChart.innerHTML = `
-      <path d="M48 18V190H620" fill="none" stroke="#3f3f46" stroke-width="1"/>
-      <path d="M48 61H620M48 104H620M48 147H620" fill="none" stroke="#27272a" stroke-width="1"/>
+      <path d="M72 22V186H558V22" fill="none" stroke="#3f3f46" stroke-width="1"/>
+      <path d="M72 22H558M72 63H558M72 104H558M72 145H558M72 186H558" fill="none" stroke="#27272a" stroke-width="1"/>
+      ${chartTicks(rewardRange, 64, "end", "#a3e635")}
+      ${chartTicks(lossRange, 566, "start", "#60a5fa")}
+      <text x="14" y="104" text-anchor="middle" fill="#a3e635" font-size="10" transform="rotate(-90 14 104)">Mean reward</text>
+      <text x="628" y="104" text-anchor="middle" fill="#60a5fa" font-size="10" transform="rotate(90 628 104)">VF loss</text>
       <polyline points="${rewardPoints.join(" ")}" fill="none" stroke="#a3e635" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
       ${chartMarkers(rewardPoints, 4, "#a3e635")}
       <polyline points="${lossPoints.join(" ")}" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       ${chartMarkers(lossPoints, 3, "#60a5fa")}
-      <text x="48" y="210" fill="#71717a" font-size="12">Iteration ${firstIteration}</text>
-      <text x="620" y="210" text-anchor="end" fill="#71717a" font-size="12">${lastIteration}</text>`;
+      <text x="72" y="210" fill="#71717a" font-size="12">Iteration ${firstIteration}</text>
+      <text x="558" y="210" text-anchor="end" fill="#71717a" font-size="12">${lastIteration}</text>
+      <g id="trainingChartHover" visibility="hidden" pointer-events="none">
+        <line id="trainingChartHoverLine" y1="22" y2="186" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/>
+        <circle id="trainingChartRewardPoint" r="5" fill="#a3e635" stroke="#09090b" stroke-width="2"/>
+        <circle id="trainingChartLossPoint" r="4" fill="#60a5fa" stroke="#09090b" stroke-width="2"/>
+        <g id="trainingChartTooltip"><rect width="166" height="48" rx="6" fill="#18181b" stroke="#52525b"/><text id="trainingChartTooltipIteration" x="9" y="16" fill="#d4d4d8" font-size="11"></text><text id="trainingChartTooltipValues" x="9" y="35" fill="#f4f4f5" font-size="11"></text></g>
+      </g>`;
 }
+
+trainingChart.addEventListener("pointermove", (event) => {
+    const state = trainingChartState;
+    if (!state?.metrics.length) return;
+    const bounds = trainingChart.getBoundingClientRect();
+    const svgX = (event.clientX - bounds.left) * 640 / bounds.width;
+    const relative = Math.max(0, Math.min(1, (svgX - state.left) / state.width));
+    const index = Math.round(relative * (state.metrics.length - 1));
+    const metric = state.metrics[index];
+    const x = state.left + (state.metrics.length === 1 ? state.width / 2 : index * state.width / (state.metrics.length - 1));
+    const rewardY = chartY(metric.reward_mean, state.rewardRange, state.top, state.height);
+    const lossY = chartY(metric.vf_error_after, state.lossRange, state.top, state.height);
+    const hover = trainingChart.querySelector<SVGGElement>("#trainingChartHover");
+    const line = trainingChart.querySelector<SVGLineElement>("#trainingChartHoverLine");
+    const rewardPoint = trainingChart.querySelector<SVGCircleElement>("#trainingChartRewardPoint");
+    const lossPoint = trainingChart.querySelector<SVGCircleElement>("#trainingChartLossPoint");
+    const tooltip = trainingChart.querySelector<SVGGElement>("#trainingChartTooltip");
+    const iterationText = trainingChart.querySelector<SVGTextElement>("#trainingChartTooltipIteration");
+    const valuesText = trainingChart.querySelector<SVGTextElement>("#trainingChartTooltipValues");
+    if (!hover || !line || !rewardPoint || !lossPoint || !tooltip || !iterationText || !valuesText) return;
+    line.setAttribute("x1", String(x)); line.setAttribute("x2", String(x));
+    rewardPoint.setAttribute("cx", String(x)); rewardPoint.setAttribute("cy", String(rewardY));
+    lossPoint.setAttribute("cx", String(x)); lossPoint.setAttribute("cy", String(lossY));
+    tooltip.setAttribute("transform", `translate(${x > 390 ? x - 174 : x + 8} ${Math.max(24, Math.min(136, rewardY - 24))})`);
+    iterationText.textContent = `Iteration ${metric.iteration}`;
+    valuesText.textContent = `Reward ${formatChartValue(metric.reward_mean)} · Loss ${formatChartValue(metric.vf_error_after)}`;
+    hover.setAttribute("visibility", "visible");
+});
+trainingChart.addEventListener("pointerleave", () => trainingChart.querySelector("#trainingChartHover")?.setAttribute("visibility", "hidden"));
 
 async function refreshTrainingRuns(preferred = selectedTrainingRun): Promise<void> {
     try {
@@ -1298,13 +1377,17 @@ async function startTraining(): Promise<void> {
 
 async function stopTraining(): Promise<void> {
     if (!selectedTrainingRun) return;
+    const continuing = trainingStopButton.dataset.action === "continue";
     trainingStopButton.disabled = true;
-    trainingMessage.textContent = "Stopping after the current training operation…";
+    trainingMessage.textContent = continuing ? "Continuing the same training process and learning curve…" : "Pausing the training process with its current GPU and optimizer state…";
     try {
-        const run = await trainingRequest<TrainingRun>(`/runs/${encodeURIComponent(selectedTrainingRun)}/stop`, {method: "POST"});
+        const action = continuing ? "continue" : "stop";
+        const run = await trainingRequest<TrainingRun>(`/runs/${encodeURIComponent(selectedTrainingRun)}/${action}`, {method: "POST"});
         renderTrainingRun(run);
+        trainingMessage.textContent = continuing ? "Training continued. New iterations will extend the existing curve." : "Training paused. Its exact process state is retained; press Continue to resume.";
     } catch (error) {
-        trainingMessage.textContent = error instanceof Error ? error.message : "Could not stop training.";
+        trainingMessage.textContent = error instanceof Error ? error.message : `Could not ${continuing ? "continue" : "pause"} training.`;
+        trainingStopButton.disabled = false;
     }
 }
 
