@@ -115,6 +115,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               <option value="isaaclab">NVIDIA Isaac Lab</option>
               <option value="mujoco">MuJoCo · DAPG</option>
             </select>
+            <select id="isaacTaskSelect" class="engine-select" aria-label="Isaac Lab task">
+              <option value="state">Cube Lift · State</option>
+              <option value="vision">Cube Lift · Vision</option>
+            </select>
             <button id="sceneAccountButton" class="setup-button" type="button" aria-controls="sceneAccountPanel" aria-expanded="false">
               <span aria-hidden="true">◎</span><span id="sceneAccountLabel">User: Guest</span>
             </button>
@@ -171,6 +175,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             </svg>
             <p>Press "Start Simulation" to begin</p>
           </div>
+
+          <aside id="visionSensorPanel" class="vision-sensor-panel" hidden aria-label="Robot perception camera">
+            <header><span>Robot RGB-D camera</span><small>Pose-estimator input</small></header>
+            <img id="visionSensorImage" alt="RGB image from the fixed robot perception camera" />
+          </aside>
 
           <div id="sceneDropPreview" class="scene-drop-preview" hidden aria-hidden="true">
             <span id="sceneDropShape" class="scene-drop-shape">▣</span>
@@ -708,6 +717,9 @@ const resetCameraButton = document.querySelector<HTMLButtonElement>("#resetCamer
 
 const simulationImage =
     document.querySelector<HTMLImageElement>("#simulationImage")!;
+const visionSensorPanel = document.querySelector<HTMLElement>("#visionSensorPanel")!;
+const visionSensorImage = document.querySelector<HTMLImageElement>("#visionSensorImage")!;
+let lastVisionFrameRefresh = 0;
 
 const placeholder =
     document.querySelector<HTMLDivElement>("#placeholder")!;
@@ -725,6 +737,7 @@ const statusText =
 const statusIndicator =
     document.querySelector<HTMLSpanElement>("#statusIndicator")!;
 const simulationEngineSelect = document.querySelector<HTMLSelectElement>("#simulationEngineSelect")!;
+const isaacTaskSelect = document.querySelector<HTMLSelectElement>("#isaacTaskSelect")!;
 const cameraHelp = document.querySelector<HTMLElement>("#cameraHelp")!;
 
 const episodeValue =
@@ -859,11 +872,14 @@ let pinchDistance: number | null = null;
 let cameraGestureMoved = false;
 let suppressSimulationClick = false;
 type SimulationEngine = "isaaclab" | "mujoco";
+type IsaacTask = "state" | "vision";
 let selectedSimulationEngine: SimulationEngine = "isaaclab";
+let selectedIsaacTask: IsaacTask = "state";
 
 const defaultConfiguration = {
     engine: "isaaclab" as SimulationEngine,
     taskId: "relocate",
+    isaacTask: "state" as IsaacTask,
     robotFile: "relocate_clean.xml",
     policyFile: "policy_paul.pkl",
 } as const;
@@ -935,11 +951,11 @@ type TrainingMetric = {
 type TrainingRun = {
     id: string;
     status: {status: string; iteration?: number; error?: string; latest_checkpoint?: string};
-    config: {name?: string; engine?: SimulationEngine; iterations?: number; trajectories?: number; horizon?: number; num_envs?: number; seed?: number};
+    config: {name?: string; engine?: SimulationEngine; isaac_task?: IsaacTask; iterations?: number; trajectories?: number; horizon?: number; num_envs?: number; seed?: number};
     metrics: TrainingMetric[];
     checkpoints: string[];
 };
-type IsaacCheckpoint = {id: string; run_id: string; name: string; label: string; modified_at: number; deletable: boolean};
+type IsaacCheckpoint = {id: string; run_id: string; name: string; label: string; modified_at: number; deletable: boolean; isaac_task?: IsaacTask};
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
 let selectedTrainingRun = "";
@@ -1122,7 +1138,7 @@ trainingChart.addEventListener("pointerleave", () => trainingChart.querySelector
 
 async function refreshTrainingRuns(preferred = selectedTrainingRun): Promise<void> {
     try {
-        const result = await trainingRequest<{runs: TrainingRun[]}>(`/runs?engine=${selectedSimulationEngine}`);
+        const result = await trainingRequest<{runs: TrainingRun[]}>(`/runs?engine=${selectedSimulationEngine}${selectedSimulationEngine === "isaaclab" ? `&isaac_task=${selectedIsaacTask}` : ""}`);
         trainingRunSelect.replaceChildren();
         if (!result.runs.length) {
             trainingRunSelect.append(new Option("No runs yet", ""));
@@ -1153,7 +1169,7 @@ async function refreshCheckpoints(): Promise<void> {
     const playbackValue = checkpointSelect.value;
     const resumeValue = trainingResumeSelect.value;
     try {
-        const result = await trainingRequest<{checkpoints: IsaacCheckpoint[]; selected?: string | null}>("/checkpoints");
+        const result = await trainingRequest<{checkpoints: IsaacCheckpoint[]; selected?: string | null}>(`/checkpoints?isaac_task=${selectedIsaacTask}`);
         activePolicyCheckpoint = result.selected ?? null;
         availablePolicyCheckpoints = result.checkpoints;
         const options = result.checkpoints.map((checkpoint) => {
@@ -1307,6 +1323,47 @@ async function loadPolicyCheckpoint(): Promise<void> {
     }
 }
 
+async function selectIsaacTask(task: IsaacTask): Promise<void> {
+    const previous = selectedIsaacTask;
+    selectedIsaacTask = task;
+    isaacTaskSelect.disabled = true;
+    resetSimulationForConfiguration();
+    applyConfiguration();
+    setStatus(`Switching to ${task === "vision" ? "Vision-based" : "State-based"} Isaac task…`, "connecting");
+    placeholderMessage.textContent = "Isaac Lab is restarting for the selected task… usually about 30–60 seconds";
+    try {
+        await trainingRequest<{task: IsaacTask; restarting: boolean}>("/isaac-task", {
+            method: "POST",
+            body: JSON.stringify({task}),
+        });
+        const deadline = Date.now() + 180_000;
+        while (Date.now() < deadline) {
+            const result = await trainingRequest<{task: IsaacTask; worker?: {status?: string; task?: IsaacTask; error?: string}}>("/isaac-task");
+            if (result.worker?.status === "ready" && result.worker.task === task) {
+                activePolicyCheckpoint = null;
+                selectedTrainingRun = "";
+                await refreshCheckpoints();
+                if (!trainingPanel.hidden) await refreshTrainingRuns();
+                setStatus(`${task === "vision" ? "Vision-based" : "State-based"} Isaac task ready`, "connected");
+                connectToSimulation(false, true);
+                return;
+            }
+            if (result.worker?.status === "failed" || result.worker?.status === "error") {
+                throw new Error(result.worker.error || "Isaac Lab could not start the selected task.");
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        }
+        throw new Error("Isaac Lab did not become ready within three minutes.");
+    } catch (error) {
+        selectedIsaacTask = previous;
+        isaacTaskSelect.value = previous;
+        applyConfiguration();
+        setStatus(error instanceof Error ? error.message : "Could not switch Isaac task.", "error");
+    } finally {
+        isaacTaskSelect.disabled = false;
+    }
+}
+
 function setTrainingOpen(open: boolean): void {
     trainingPanel.hidden = !open;
     trainingButton.setAttribute("aria-expanded", String(open));
@@ -1324,7 +1381,9 @@ function updateTrainingUi(): void {
     const usesIsaac = selectedSimulationEngine === "isaaclab";
     trainingEngineLabel.textContent = usesIsaac ? "NVIDIA Isaac Lab · RSL-RL PPO" : "MuJoCo · DAPG";
     trainingSafety.textContent = usesIsaac
-        ? "Runs the official Franka Cube Lift trainer headlessly on the GPU. Checkpoints are isolated from the live viewer and existing policies."
+        ? selectedIsaacTask === "vision"
+            ? "Trains the separate Franka Vision task. The actor sees a noisy pose estimate plus confidence instead of the exact cube position; State-task checkpoints remain untouched."
+            : "Runs the official Franka Cube Lift trainer headlessly on the GPU. Checkpoints are isolated from the live viewer and Vision policies."
         : "Fine-tunes a private copy of the stable Relocate checkpoint. The reference checkpoint is never overwritten.";
     trainingTrajectoriesLabel.hidden = usesIsaac;
     trainingHorizonLabel.hidden = usesIsaac;
@@ -1357,6 +1416,7 @@ async function startTraining(): Promise<void> {
                 horizon: Number(trainingHorizon.value),
                 num_envs: Number(trainingEnvironments.value),
                 resume_checkpoint: selectedSimulationEngine === "isaaclab" ? trainingResumeSelect.value || null : null,
+                isaac_task: selectedIsaacTask,
                 seed: Number(trainingSeed.value),
             }),
         });
@@ -1366,6 +1426,7 @@ async function startTraining(): Promise<void> {
             iterations: Number(trainingIterations.value),
             environments: selectedSimulationEngine === "isaaclab" ? Number(trainingEnvironments.value) : null,
             resumed: selectedSimulationEngine === "isaaclab" && Boolean(trainingResumeSelect.value),
+            isaac_task: selectedSimulationEngine === "isaaclab" ? selectedIsaacTask : null,
         });
         trainingMessage.textContent = `Training ${run.id} started. You may close this panel; the backend continues.`;
         await refreshTrainingRuns(run.id);
@@ -2415,18 +2476,23 @@ function applyConfiguration(): void {
     policyFileDisplay.textContent = policyFile;
     const task = taskCatalog[selectedTaskId];
     configurationSummary.textContent = selectedSimulationEngine === "isaaclab"
-        ? "NVIDIA Isaac Lab · Franka Cube Lift · GPU PhysX + RTX"
+        ? selectedIsaacTask === "vision"
+            ? "NVIDIA Isaac Lab · Franka Cube Lift Vision · RGB-D pose estimate"
+            : "NVIDIA Isaac Lab · Franka Cube Lift · GPU PhysX + RTX"
         : `${task.name} · ${policyFile}`;
     if (selectedSimulationEngine === "mujoco" && generatedObject && selectedTaskId === "relocate") {
         configurationSummary.textContent = `${task.name} · ${generatedObject.name}`;
     }
     interactionHint.textContent = selectedSimulationEngine === "isaaclab"
-        ? "Isaac Lab GPU preview · scripted Franka motion; trained-policy playback comes next"
+        ? selectedIsaacTask === "vision"
+            ? "Vision task · actor receives a noisy camera-pose estimate and confidence, never the exact cube position"
+            : "Isaac Lab GPU preview · state-based Franka Cube Lift"
         : task.interactive
             ? "Click on the simulation window to set target positions for the robotic hand"
             : `${task.name} runs autonomously with its trained DAPG policy`;
     localStorage.setItem("mujocoweb-configuration", JSON.stringify({
         engine: selectedSimulationEngine,
+        isaacTask: selectedIsaacTask,
         taskId: selectedTaskId,
         robotFile,
         policyFile,
@@ -2472,8 +2538,26 @@ function resetConfiguration(): void {
     populateTask("relocate");
 }
 
+async function syncIsaacTaskSelection(): Promise<void> {
+    if (selectedSimulationEngine !== "isaaclab" || isaacTaskSelect.disabled) return;
+    try {
+        const result = await trainingRequest<{task?: IsaacTask}>("/isaac-task");
+        const backendTask: IsaacTask = result.task === "vision" ? "vision" : "state";
+        if (backendTask === selectedIsaacTask) return;
+        selectedIsaacTask = backendTask;
+        isaacTaskSelect.value = backendTask;
+        applyConfiguration();
+        updateTrainingUi();
+        visionSensorPanel.hidden = backendTask !== "vision";
+        await refreshCheckpoints();
+    } catch {
+        // The simulation connection will surface backend availability errors.
+    }
+}
+
 function updateEngineUi(): void {
     simulationEngineSelect.value = selectedSimulationEngine;
+    isaacTaskSelect.value = selectedIsaacTask;
     const usesMujoco = selectedSimulationEngine === "mujoco";
     document.querySelectorAll<HTMLButtonElement>("[data-live-asset], [data-scene-asset]").forEach((button) => {
         const asset = button.dataset.liveAsset ?? button.dataset.sceneAsset ?? "box";
@@ -2487,10 +2571,15 @@ function updateEngineUi(): void {
     trainingButton.disabled = false;
     trainingButton.title = usesMujoco ? "Open DAPG training" : "Open parallel Isaac Lab training";
     checkpointToolbar.hidden = usesMujoco;
+    isaacTaskSelect.hidden = usesMujoco;
+    visionSensorPanel.hidden = usesMujoco || selectedIsaacTask !== "vision";
     selectedTrainingRun = "";
     updateTrainingUi();
     if (!trainingPanel.hidden) void refreshTrainingRuns();
-    if (!usesMujoco) void refreshCheckpoints();
+    if (!usesMujoco) {
+        void refreshCheckpoints();
+        void syncIsaacTaskSelection();
+    }
     resetCameraButton.disabled = !socket || socket.readyState !== WebSocket.OPEN;
     updateEditorEngineUi();
 }
@@ -2500,6 +2589,7 @@ try {
     if (storedConfiguration) {
         const parsed = JSON.parse(storedConfiguration) as Partial<typeof defaultConfiguration> & {generatedObject?: GeneratedObject};
         selectedSimulationEngine = parsed.engine === "mujoco" ? "mujoco" : "isaaclab";
+        selectedIsaacTask = parsed.isaacTask === "vision" ? "vision" : "state";
         activateEngineScene(selectedSimulationEngine);
         const storedTask = parsed.taskId && parsed.taskId in taskCatalog
             ? parsed.taskId as TaskId
@@ -2988,6 +3078,10 @@ function handleTextMessage(message: string): void {
             }
             if (data.render_camera) renderCamera = data.render_camera;
             if (data.camera && selectedSimulationEngine === "mujoco") previewCamera = data.camera;
+            if (selectedSimulationEngine === "isaaclab" && selectedIsaacTask === "vision" && Date.now() - lastVisionFrameRefresh > 250) {
+                lastVisionFrameRefresh = Date.now();
+                visionSensorImage.src = `${backendHttpUrl("/api/isaac/vision-frame")}?t=${lastVisionFrameRefresh}`;
+            }
             if (selectedSceneAsset >= 0) renderSceneGizmo();
             episodeValue.textContent = String(data.episode ?? "—");
             stepValue.textContent = String(data.step ?? "—");
@@ -3252,6 +3346,10 @@ simulationWindow.addEventListener("dragleave", (event) => {
 simulationWindow.addEventListener("drop", dropSceneAsset);
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
+isaacTaskSelect.addEventListener("change", () => {
+    const task: IsaacTask = isaacTaskSelect.value === "vision" ? "vision" : "state";
+    if (task !== selectedIsaacTask) void selectIsaacTask(task);
+});
 simulationEngineSelect.addEventListener("change", () => {
     selectedSimulationEngine = simulationEngineSelect.value === "mujoco" ? "mujoco" : "isaaclab";
     captureEvent("simulation_engine_changed", {engine: selectedSimulationEngine});
