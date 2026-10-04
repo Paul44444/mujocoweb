@@ -2811,7 +2811,10 @@ function sendSimulationCommand(command: Record<string, unknown>): boolean {
 
 function isaacScenePayload(): SceneAsset[] {
     const supported = new Set(["box", "sphere", "cylinder", "kuka_allegro"]);
-    return sceneAssets.filter((asset) => supported.has(asset.asset)).map((asset) => {
+    const hideDefaultCube = selectedIsaacTask === "labware_lift" || selectedIsaacTask === "labware";
+    return sceneAssets
+        .filter((asset) => supported.has(asset.asset) && !(hideDefaultCube && asset.id === "training-cube"))
+        .map((asset) => {
         const kuka = asset.asset === "kuka_allegro";
         return {
             ...asset,
