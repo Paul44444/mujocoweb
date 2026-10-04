@@ -118,8 +118,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <select id="isaacTaskSelect" class="engine-select" aria-label="Isaac Lab task">
               <option value="state">Cube Lift · State</option>
               <option value="vision">Cube Lift · Vision</option>
-              <option value="labware_lift">Test Tube · Lift</option>
-              <option value="labware">Labware · Test Tube Rack</option>
+              <option value="labware_lift">Stage 1 · Lift Test Tube</option>
+              <option value="labware">Stage 2 · Place in Rack</option>
             </select>
             <button id="sceneAccountButton" class="setup-button" type="button" aria-controls="sceneAccountPanel" aria-expanded="false">
               <span aria-hidden="true">◎</span><span id="sceneAccountLabel">User: Guest</span>
@@ -882,7 +882,7 @@ let selectedIsaacTask: IsaacTask = "state";
 function isaacTaskName(task: IsaacTask): string {
     if (task === "vision") return "Vision-based Cube Lift";
     if (task === "labware_lift") return "Test Tube Lift";
-    if (task === "labware") return "Labware Placement";
+    if (task === "labware") return "Stage 2: Labware Placement";
     return "State-based Cube Lift";
 }
 
