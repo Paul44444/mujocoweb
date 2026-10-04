@@ -118,6 +118,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <select id="isaacTaskSelect" class="engine-select" aria-label="Isaac Lab task">
               <option value="state">Cube Lift · State</option>
               <option value="vision">Cube Lift · Vision</option>
+              <option value="labware">Labware · Test Tube Rack</option>
             </select>
             <button id="sceneAccountButton" class="setup-button" type="button" aria-controls="sceneAccountPanel" aria-expanded="false">
               <span aria-hidden="true">◎</span><span id="sceneAccountLabel">User: Guest</span>
@@ -873,9 +874,15 @@ let pinchDistance: number | null = null;
 let cameraGestureMoved = false;
 let suppressSimulationClick = false;
 type SimulationEngine = "isaaclab" | "mujoco";
-type IsaacTask = "state" | "vision";
+type IsaacTask = "state" | "vision" | "labware";
 let selectedSimulationEngine: SimulationEngine = "isaaclab";
 let selectedIsaacTask: IsaacTask = "state";
+
+function isaacTaskName(task: IsaacTask): string {
+    if (task === "vision") return "Vision-based Cube Lift";
+    if (task === "labware") return "Labware Placement";
+    return "State-based Cube Lift";
+}
 
 const defaultConfiguration = {
     engine: "isaaclab" as SimulationEngine,
@@ -1330,7 +1337,7 @@ async function selectIsaacTask(task: IsaacTask): Promise<void> {
     isaacTaskSelect.disabled = true;
     resetSimulationForConfiguration();
     applyConfiguration();
-    setStatus(`Switching to ${task === "vision" ? "Vision-based" : "State-based"} Isaac task…`, "connecting");
+    setStatus(`Switching to ${isaacTaskName(task)}…`, "connecting");
     placeholderMessage.textContent = "Isaac Lab is restarting for the selected task… usually about 30–60 seconds";
     try {
         await trainingRequest<{task: IsaacTask; restarting: boolean}>("/isaac-task", {
@@ -1345,7 +1352,7 @@ async function selectIsaacTask(task: IsaacTask): Promise<void> {
                 selectedTrainingRun = "";
                 await refreshCheckpoints();
                 if (!trainingPanel.hidden) await refreshTrainingRuns();
-                setStatus(`${task === "vision" ? "Vision-based" : "State-based"} Isaac task ready`, "connected");
+                setStatus(`${isaacTaskName(task)} ready`, "connected");
                 connectToSimulation(false, true);
                 return;
             }
@@ -1384,7 +1391,9 @@ function updateTrainingUi(): void {
     trainingSafety.textContent = usesIsaac
         ? selectedIsaacTask === "vision"
             ? "Trains the separate Franka Vision task with a noisy pose-estimator proxy. Playback triangulates XYZ from real stereo camera pixels; existing State policies remain compatible."
-            : "Runs the official Franka Cube Lift trainer headlessly on the GPU. Checkpoints are isolated from the live viewer and Vision policies."
+            : selectedIsaacTask === "labware"
+                ? "Trains the separate Franka test-tube placement task with parallel GPU environments. Cube checkpoints and environments remain untouched."
+                : "Runs the official Franka Cube Lift trainer headlessly on the GPU. Checkpoints are isolated from the live viewer and Vision policies."
         : "Fine-tunes a private copy of the stable Relocate checkpoint. The reference checkpoint is never overwritten.";
     trainingTrajectoriesLabel.hidden = usesIsaac;
     trainingHorizonLabel.hidden = usesIsaac;
@@ -2478,8 +2487,10 @@ function applyConfiguration(): void {
     const task = taskCatalog[selectedTaskId];
     configurationSummary.textContent = selectedSimulationEngine === "isaaclab"
         ? selectedIsaacTask === "vision"
-            ? "NVIDIA Isaac Lab · Franka Cube Lift Vision · RGB-D pose estimate"
-            : "NVIDIA Isaac Lab · Franka Cube Lift · GPU PhysX + RTX"
+            ? "NVIDIA Isaac Lab · Franka Cube Lift Vision · Stereo RGB pose estimate"
+            : selectedIsaacTask === "labware"
+                ? "NVIDIA Isaac Lab · Franka Labware Placement · Test tube and rack"
+                : "NVIDIA Isaac Lab · Franka Cube Lift · GPU PhysX + RTX"
         : `${task.name} · ${policyFile}`;
     if (selectedSimulationEngine === "mujoco" && generatedObject && selectedTaskId === "relocate") {
         configurationSummary.textContent = `${task.name} · ${generatedObject.name}`;
@@ -2487,7 +2498,9 @@ function applyConfiguration(): void {
     interactionHint.textContent = selectedSimulationEngine === "isaaclab"
         ? selectedIsaacTask === "vision"
             ? "Vision task · cube XYZ is triangulated from two RGB cameras, never read directly by the actor"
-            : "Isaac Lab GPU preview · state-based Franka Cube Lift"
+            : selectedIsaacTask === "labware"
+                ? "Labware task · grasp the test tube and place it upright in the rack slot"
+                : "Isaac Lab GPU preview · state-based Franka Cube Lift"
         : task.interactive
             ? "Click on the simulation window to set target positions for the robotic hand"
             : `${task.name} runs autonomously with its trained DAPG policy`;
@@ -2543,7 +2556,7 @@ async function syncIsaacTaskSelection(): Promise<void> {
     if (selectedSimulationEngine !== "isaaclab" || isaacTaskSelect.disabled) return;
     try {
         const result = await trainingRequest<{task?: IsaacTask}>("/isaac-task");
-        const backendTask: IsaacTask = result.task === "vision" ? "vision" : "state";
+        const backendTask: IsaacTask = result.task === "vision" || result.task === "labware" ? result.task : "state";
         if (backendTask === selectedIsaacTask) return;
         selectedIsaacTask = backendTask;
         isaacTaskSelect.value = backendTask;
@@ -2590,7 +2603,7 @@ try {
     if (storedConfiguration) {
         const parsed = JSON.parse(storedConfiguration) as Partial<typeof defaultConfiguration> & {generatedObject?: GeneratedObject};
         selectedSimulationEngine = parsed.engine === "mujoco" ? "mujoco" : "isaaclab";
-        selectedIsaacTask = parsed.isaacTask === "vision" ? "vision" : "state";
+        selectedIsaacTask = parsed.isaacTask === "vision" || parsed.isaacTask === "labware" ? parsed.isaacTask : "state";
         activateEngineScene(selectedSimulationEngine);
         const storedTask = parsed.taskId && parsed.taskId in taskCatalog
             ? parsed.taskId as TaskId
@@ -3352,7 +3365,9 @@ simulationWindow.addEventListener("drop", dropSceneAsset);
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 isaacTaskSelect.addEventListener("change", () => {
-    const task: IsaacTask = isaacTaskSelect.value === "vision" ? "vision" : "state";
+    const task: IsaacTask = isaacTaskSelect.value === "vision" || isaacTaskSelect.value === "labware"
+        ? isaacTaskSelect.value
+        : "state";
     if (task !== selectedIsaacTask) void selectIsaacTask(task);
 });
 simulationEngineSelect.addEventListener("change", () => {
