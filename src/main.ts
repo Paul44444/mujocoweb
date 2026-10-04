@@ -118,6 +118,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             <select id="isaacTaskSelect" class="engine-select" aria-label="Isaac Lab task">
               <option value="state">Cube Lift · State</option>
               <option value="vision">Cube Lift · Vision</option>
+              <option value="labware_lift">Test Tube · Lift</option>
               <option value="labware">Labware · Test Tube Rack</option>
             </select>
             <button id="sceneAccountButton" class="setup-button" type="button" aria-controls="sceneAccountPanel" aria-expanded="false">
@@ -874,12 +875,13 @@ let pinchDistance: number | null = null;
 let cameraGestureMoved = false;
 let suppressSimulationClick = false;
 type SimulationEngine = "isaaclab" | "mujoco";
-type IsaacTask = "state" | "vision" | "labware";
+type IsaacTask = "state" | "vision" | "labware_lift" | "labware";
 let selectedSimulationEngine: SimulationEngine = "isaaclab";
 let selectedIsaacTask: IsaacTask = "state";
 
 function isaacTaskName(task: IsaacTask): string {
     if (task === "vision") return "Vision-based Cube Lift";
+    if (task === "labware_lift") return "Test Tube Lift";
     if (task === "labware") return "Labware Placement";
     return "State-based Cube Lift";
 }
@@ -1391,6 +1393,8 @@ function updateTrainingUi(): void {
     trainingSafety.textContent = usesIsaac
         ? selectedIsaacTask === "vision"
             ? "Trains the separate Franka Vision task with a noisy pose-estimator proxy. Playback triangulates XYZ from real stereo camera pixels; existing State policies remain compatible."
+            : selectedIsaacTask === "labware_lift"
+                ? "Trains a separate first-stage task: reach, grasp, and lift the test tube. Placement and cube checkpoints remain untouched."
             : selectedIsaacTask === "labware"
                 ? "Trains the separate Franka test-tube placement task with parallel GPU environments. Cube checkpoints and environments remain untouched."
                 : "Runs the official Franka Cube Lift trainer headlessly on the GPU. Checkpoints are isolated from the live viewer and Vision policies."
@@ -2488,6 +2492,8 @@ function applyConfiguration(): void {
     configurationSummary.textContent = selectedSimulationEngine === "isaaclab"
         ? selectedIsaacTask === "vision"
             ? "NVIDIA Isaac Lab · Franka Cube Lift Vision · Stereo RGB pose estimate"
+            : selectedIsaacTask === "labware_lift"
+                ? "NVIDIA Isaac Lab · Franka Test Tube Lift · Reach, grasp and raise"
             : selectedIsaacTask === "labware"
                 ? "NVIDIA Isaac Lab · Franka Labware Placement · Test tube and rack"
                 : "NVIDIA Isaac Lab · Franka Cube Lift · GPU PhysX + RTX"
@@ -2498,6 +2504,8 @@ function applyConfiguration(): void {
     interactionHint.textContent = selectedSimulationEngine === "isaaclab"
         ? selectedIsaacTask === "vision"
             ? "Vision task · cube XYZ is triangulated from two RGB cameras, never read directly by the actor"
+            : selectedIsaacTask === "labware_lift"
+                ? "Test Tube Lift · reach, grasp and raise the tube at least 7 cm"
             : selectedIsaacTask === "labware"
                 ? "Labware task · grasp the test tube and place it upright in the rack slot"
                 : "Isaac Lab GPU preview · state-based Franka Cube Lift"
@@ -2556,7 +2564,7 @@ async function syncIsaacTaskSelection(): Promise<void> {
     if (selectedSimulationEngine !== "isaaclab" || isaacTaskSelect.disabled) return;
     try {
         const result = await trainingRequest<{task?: IsaacTask}>("/isaac-task");
-        const backendTask: IsaacTask = result.task === "vision" || result.task === "labware" ? result.task : "state";
+        const backendTask: IsaacTask = result.task === "vision" || result.task === "labware_lift" || result.task === "labware" ? result.task : "state";
         if (backendTask === selectedIsaacTask) return;
         selectedIsaacTask = backendTask;
         isaacTaskSelect.value = backendTask;
@@ -2603,7 +2611,7 @@ try {
     if (storedConfiguration) {
         const parsed = JSON.parse(storedConfiguration) as Partial<typeof defaultConfiguration> & {generatedObject?: GeneratedObject};
         selectedSimulationEngine = parsed.engine === "mujoco" ? "mujoco" : "isaaclab";
-        selectedIsaacTask = parsed.isaacTask === "vision" || parsed.isaacTask === "labware" ? parsed.isaacTask : "state";
+        selectedIsaacTask = parsed.isaacTask === "vision" || parsed.isaacTask === "labware_lift" || parsed.isaacTask === "labware" ? parsed.isaacTask : "state";
         activateEngineScene(selectedSimulationEngine);
         const storedTask = parsed.taskId && parsed.taskId in taskCatalog
             ? parsed.taskId as TaskId
