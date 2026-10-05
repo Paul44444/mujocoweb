@@ -3376,8 +3376,9 @@ simulationWindow.addEventListener("drop", dropSceneAsset);
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 isaacTaskSelect.addEventListener("change", () => {
-    const task: IsaacTask = isaacTaskSelect.value === "vision" || isaacTaskSelect.value === "labware"
-        ? isaacTaskSelect.value
+    const value = isaacTaskSelect.value;
+    const task: IsaacTask = value === "vision" || value === "labware_lift" || value === "labware"
+        ? value
         : "state";
     if (task !== selectedIsaacTask) void selectIsaacTask(task);
 });
