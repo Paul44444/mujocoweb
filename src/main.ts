@@ -170,7 +170,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <div class="demo-panel-copy"><strong>Demonstration mode</strong><span>Move the end effector with the keyboard and record observation/action pairs for imitation learning.</span></div>
           <label>Name<input id="demoNameInput" value="Test tube grasp" maxlength="64" /></label>
           <div class="demo-actions"><button id="demoRecordButton" class="apply-button" type="button">Start recording</button><button id="demoStopButton" class="secondary-button" type="button" disabled>Stop & save</button></div>
-          <div class="demo-keymap"><kbd>←</kbd><kbd>→</kbd> X &nbsp; <kbd>↑</kbd><kbd>↓</kbd> Y &nbsp; <kbd>PageUp</kbd><kbd>PageDown</kbd> Z &nbsp; <kbd>O</kbd> Open &nbsp; <kbd>C</kbd> Close</div>
+          <div class="demo-keymap"><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd> X &nbsp; <kbd>W</kbd><kbd>S</kbd> / <kbd>↑</kbd><kbd>↓</kbd> Y &nbsp; <kbd>Q</kbd><kbd>E</kbd> / <kbd>PageDown</kbd><kbd>PageUp</kbd> Z &nbsp; <kbd>O</kbd> Open &nbsp; <kbd>I</kbd> Close</div>
           <div class="demo-library"><select id="demoSelect"><option value="">No saved demonstrations</option></select><button id="demoPlayButton" class="secondary-button" type="button" disabled>Play demo</button></div>
           <p id="demoMessage" class="generator-message" aria-live="polite">Isaac Lab only. Click Start recording, then keep the movement keys pressed.</p>
         </section>
@@ -2869,10 +2869,11 @@ let demoRecording = false;
 const demoKeys = new Set<string>();
 
 function currentDemoControl(): {movement: number[]; gripper: number} {
-    const axis = (positive: string, negative: string) => Number(demoKeys.has(positive)) - Number(demoKeys.has(negative));
+    const pressed = (...keys: string[]) => keys.some((key) => demoKeys.has(key));
+    const axis = (positive: string[], negative: string[]) => Number(pressed(...positive)) - Number(pressed(...negative));
     return {
-        movement: [axis("ArrowRight", "ArrowLeft"), axis("ArrowUp", "ArrowDown"), axis("PageUp", "PageDown")],
-        gripper: demoKeys.has("o") ? 1 : demoKeys.has("c") ? -1 : 0,
+        movement: [axis(["ArrowRight", "d"], ["ArrowLeft", "a"]), axis(["ArrowUp", "w"], ["ArrowDown", "s"]), axis(["PageUp", "e"], ["PageDown", "q"])],
+        gripper: demoKeys.has("o") ? 1 : demoKeys.has("i") ? -1 : 0,
     };
 }
 
@@ -2915,7 +2916,7 @@ function startDemoRecording(): void {
     demoRecording = true;
     demoRecordButton.disabled = true;
     demoStopButton.disabled = false;
-    demoMessage.textContent = "Recording · use the movement keys; O opens and C closes the gripper.";
+    demoMessage.textContent = "Recording without a time limit · WASD + Q/E move; O opens and I closes the gripper.";
 }
 
 function stopDemoRecording(): void {
@@ -3589,7 +3590,7 @@ setupForm.addEventListener("submit", (event) => {
     closeSetupPanel();
 });
 
-const demoControlKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "o", "c"]);
+const demoControlKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "w", "a", "s", "d", "q", "e", "o", "i"]);
 document.addEventListener("keydown", (event) => {
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
     if (demoRecording && demoControlKeys.has(key) && !(event.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable='true'], .cm-editor")) {
