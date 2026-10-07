@@ -171,7 +171,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <label>Name<input id="demoNameInput" value="Test tube grasp" maxlength="64" /></label>
           <div class="demo-actions"><button id="demoRecordButton" class="apply-button" type="button">Start recording</button><button id="demoStopButton" class="secondary-button" type="button" disabled>Stop & save</button></div>
           <div class="demo-keymap"><kbd>W</kbd><kbd>S</kbd> / <kbd>→</kbd><kbd>←</kbd> X &nbsp; <kbd>A</kbd><kbd>D</kbd> / <kbd>↑</kbd><kbd>↓</kbd> Y &nbsp; <kbd>Q</kbd><kbd>E</kbd> / <kbd>PageDown</kbd><kbd>PageUp</kbd> Z &nbsp; <kbd>O</kbd> Open &nbsp; <kbd>I</kbd> Close</div>
-          <div class="demo-library"><select id="demoSelect"><option value="">No saved demonstrations</option></select><button id="demoPlayButton" class="secondary-button" type="button" disabled>Play demo</button></div>
+          <div class="demo-library"><button id="demoLibraryToggle" class="demo-library-toggle" type="button" aria-expanded="false"><span id="demoLibraryLabel">Saved demonstrations</span><span id="demoLibraryChevron" aria-hidden="true">▾</span></button><button id="demoPlayButton" class="secondary-button" type="button" disabled>Play selected demo</button></div>
+          <div id="demoLibraryPanel" class="demo-library-panel" hidden><p>No saved demonstrations yet.</p></div>
           <p id="demoMessage" class="generator-message" aria-live="polite">Isaac Lab only. Click Start recording, then keep the movement keys pressed.</p>
         </section>
 
@@ -706,7 +707,10 @@ const demoPanel = document.querySelector<HTMLElement>("#demoPanel")!;
 const demoNameInput = document.querySelector<HTMLInputElement>("#demoNameInput")!;
 const demoRecordButton = document.querySelector<HTMLButtonElement>("#demoRecordButton")!;
 const demoStopButton = document.querySelector<HTMLButtonElement>("#demoStopButton")!;
-const demoSelect = document.querySelector<HTMLSelectElement>("#demoSelect")!;
+const demoLibraryToggle = document.querySelector<HTMLButtonElement>("#demoLibraryToggle")!;
+const demoLibraryLabel = document.querySelector<HTMLElement>("#demoLibraryLabel")!;
+const demoLibraryChevron = document.querySelector<HTMLElement>("#demoLibraryChevron")!;
+const demoLibraryPanel = document.querySelector<HTMLElement>("#demoLibraryPanel")!;
 const demoPlayButton = document.querySelector<HTMLButtonElement>("#demoPlayButton")!;
 const demoMessage = document.querySelector<HTMLParagraphElement>("#demoMessage")!;
 const isaacDesktopButton = document.querySelector<HTMLButtonElement>("#isaacDesktopButton")!;
@@ -2867,6 +2871,9 @@ function sendSimulationCommand(command: Record<string, unknown>): boolean {
 
 let demoRecording = false;
 const demoKeys = new Set<string>();
+type DemoRecord = {id: string; name: string; steps: number; duration: number; task?: string};
+let availableDemos: DemoRecord[] = [];
+let selectedDemoId = "";
 
 function currentDemoControl(): {movement: number[]; gripper: number} {
     const pressed = (...keys: string[]) => keys.some((key) => demoKeys.has(key));
@@ -2887,15 +2894,110 @@ async function refreshDemos(): Promise<void> {
     try {
         const response = await fetch(backendHttpUrl(`/api/isaac/demos/${user}`), {cache: "no-store"});
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json() as {demos?: Array<{id: string; name: string; steps: number; duration: number}>};
-        const demos = data.demos ?? [];
-        demoSelect.replaceChildren(...(demos.length
-            ? demos.map((demo) => new Option(`${demo.name} · ${demo.steps} steps · ${demo.duration.toFixed(1)} s`, demo.id))
-            : [new Option("No saved demonstrations", "")]));
-        demoPlayButton.disabled = !demoSelect.value;
+        const data = await response.json() as {demos?: DemoRecord[]};
+        availableDemos = data.demos ?? [];
+        if (!availableDemos.some((demo) => demo.id === selectedDemoId)) selectedDemoId = availableDemos[0]?.id ?? "";
+        renderDemoLibrary();
     } catch (error) {
         demoMessage.textContent = `Could not load demonstrations: ${error instanceof Error ? error.message : String(error)}`;
     }
+}
+
+function demoApiPath(id: string): string {
+    const separator = id.indexOf("/");
+    if (separator < 1) throw new Error("Invalid demonstration id");
+    return `/api/isaac/demos/${encodeURIComponent(id.slice(0, separator))}/${encodeURIComponent(id.slice(separator + 1))}`;
+}
+
+function renderDemoLibrary(): void {
+    demoLibraryLabel.textContent = availableDemos.length
+        ? `Saved demonstrations · ${availableDemos.length}`
+        : "Saved demonstrations · empty";
+    demoPlayButton.disabled = !selectedDemoId;
+    demoLibraryPanel.replaceChildren();
+    if (!availableDemos.length) {
+        const empty = document.createElement("p");
+        empty.textContent = "No saved demonstrations yet.";
+        demoLibraryPanel.append(empty);
+        return;
+    }
+    for (const demo of availableDemos) {
+        const row = document.createElement("div");
+        row.className = "demo-library-row";
+        row.classList.toggle("selected", demo.id === selectedDemoId);
+        row.tabIndex = 0;
+        row.setAttribute("role", "option");
+        row.setAttribute("aria-selected", String(demo.id === selectedDemoId));
+
+        const input = document.createElement("input");
+        input.value = demo.name;
+        input.maxLength = 64;
+        input.setAttribute("aria-label", `Rename ${demo.name}`);
+        const details = document.createElement("span");
+        details.textContent = `${demo.steps} steps · ${demo.duration.toFixed(1)} s${demo.task ? ` · ${demo.task}` : ""}`;
+        const renameButton = document.createElement("button");
+        renameButton.type = "button";
+        renameButton.className = "secondary-button demo-rename-button";
+        renameButton.textContent = "Rename";
+        const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
+        deleteButton.className = "demo-delete-button";
+        deleteButton.textContent = "🗑";
+        deleteButton.title = `Delete ${demo.name}`;
+        deleteButton.setAttribute("aria-label", `Delete ${demo.name}`);
+
+        const select = () => {
+            selectedDemoId = demo.id;
+            renderDemoLibrary();
+        };
+        row.addEventListener("click", (event) => {
+            if (!(event.target as HTMLElement).closest("input, button")) select();
+        });
+        row.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); }
+        });
+        renameButton.addEventListener("click", async () => {
+            const name = input.value.trim();
+            if (!name) { demoMessage.textContent = "Please enter a demonstration name."; return; }
+            renameButton.disabled = true;
+            try {
+                const response = await fetch(backendHttpUrl(demoApiPath(demo.id)), {
+                    method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name}),
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                demoMessage.textContent = `Renamed demonstration to “${name}”.`;
+                await refreshDemos();
+            } catch (error) {
+                demoMessage.textContent = `Could not rename demonstration: ${error instanceof Error ? error.message : String(error)}`;
+                renameButton.disabled = false;
+            }
+        });
+        input.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") { event.preventDefault(); renameButton.click(); }
+        });
+        deleteButton.addEventListener("click", async () => {
+            if (!window.confirm(`Delete the demonstration “${demo.name}”?`)) return;
+            deleteButton.disabled = true;
+            try {
+                const response = await fetch(backendHttpUrl(demoApiPath(demo.id)), {method: "DELETE"});
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                if (selectedDemoId === demo.id) selectedDemoId = "";
+                demoMessage.textContent = `Deleted demonstration “${demo.name}”.`;
+                await refreshDemos();
+            } catch (error) {
+                demoMessage.textContent = `Could not delete demonstration: ${error instanceof Error ? error.message : String(error)}`;
+                deleteButton.disabled = false;
+            }
+        });
+        row.append(input, details, renameButton, deleteButton);
+        demoLibraryPanel.append(row);
+    }
+}
+
+function setDemoLibraryOpen(open: boolean): void {
+    demoLibraryPanel.hidden = !open;
+    demoLibraryToggle.setAttribute("aria-expanded", String(open));
+    demoLibraryChevron.textContent = open ? "▴" : "▾";
 }
 
 function setDemoPanelOpen(open: boolean): void {
@@ -3293,9 +3395,9 @@ trainingButton.addEventListener("click", () => setTrainingOpen(trainingPanel.has
 demoModeButton.addEventListener("click", () => setDemoPanelOpen(demoPanel.hasAttribute("hidden")));
 demoRecordButton.addEventListener("click", startDemoRecording);
 demoStopButton.addEventListener("click", stopDemoRecording);
-demoSelect.addEventListener("change", () => { demoPlayButton.disabled = !demoSelect.value; });
+demoLibraryToggle.addEventListener("click", () => setDemoLibraryOpen(demoLibraryPanel.hasAttribute("hidden")));
 demoPlayButton.addEventListener("click", () => {
-    if (!demoSelect.value || !sendSimulationCommand({type: "demo_play", id: demoSelect.value})) return;
+    if (!selectedDemoId || !sendSimulationCommand({type: "demo_play", id: selectedDemoId})) return;
     demoMessage.textContent = "Playing saved demonstration from its initial state…";
 });
 isaacDesktopButton.addEventListener("click", () => void openIsaacDesktop());
