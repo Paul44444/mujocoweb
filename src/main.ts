@@ -667,6 +667,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <div class="training-actions">
       <button id="trainingStartButton" class="apply-button" type="button">Start new training run</button>
       <button id="trainingStopButton" class="secondary-button" type="button" disabled>Stop</button>
+      <button id="trainingCancelButton" class="training-cancel-button" type="button" disabled>Cancel training</button>
       <label class="training-run-history"><span>Progress history · one entry per training run</span><select id="trainingRunSelect" aria-label="Training run progress history"><option value="">No runs yet</option></select></label>
     </div>
     <p id="trainingMessage" class="generator-message" aria-live="polite">Ready to create an isolated training run.</p>
@@ -693,6 +694,7 @@ const trainingPanel = document.querySelector<HTMLElement>("#trainingPanel")!;
 const trainingCloseButton = document.querySelector<HTMLButtonElement>("#trainingCloseButton")!;
 const trainingStartButton = document.querySelector<HTMLButtonElement>("#trainingStartButton")!;
 const trainingStopButton = document.querySelector<HTMLButtonElement>("#trainingStopButton")!;
+const trainingCancelButton = document.querySelector<HTMLButtonElement>("#trainingCancelButton")!;
 const trainingRunSelect = document.querySelector<HTMLSelectElement>("#trainingRunSelect")!;
 const trainingName = document.querySelector<HTMLInputElement>("#trainingName")!;
 const trainingEngineLabel = document.querySelector<HTMLElement>("#trainingEngineLabel")!;
@@ -1067,6 +1069,7 @@ function renderTrainingRun(run: TrainingRun | null): void {
         trainingStopButton.disabled = true;
         trainingStopButton.textContent = "Stop";
         trainingStopButton.dataset.action = "pause";
+        trainingCancelButton.disabled = true;
         trainingStartButton.disabled = false;
         trainingChartState = null;
         return;
@@ -1082,6 +1085,7 @@ function renderTrainingRun(run: TrainingRun | null): void {
     trainingStopButton.disabled = !active && !paused;
     trainingStopButton.textContent = paused ? "Continue" : "Stop";
     trainingStopButton.dataset.action = paused ? "continue" : "pause";
+    trainingCancelButton.disabled = !active && !paused;
     trainingStartButton.disabled = active || paused;
     trainingCheckpoints.textContent = run.checkpoints.length ? run.checkpoints.join(" · ") : "None yet";
     if (run.status.error) trainingMessage.textContent = run.status.error;
@@ -1463,6 +1467,23 @@ async function stopTraining(): Promise<void> {
     } catch (error) {
         trainingMessage.textContent = error instanceof Error ? error.message : `Could not ${continuing ? "continue" : "pause"} training.`;
         trainingStopButton.disabled = false;
+    }
+}
+
+async function cancelTraining(): Promise<void> {
+    if (!selectedTrainingRun) return;
+    if (!window.confirm("Cancel this training run? Existing metrics and checkpoints will be kept, but the in-memory optimizer state will be lost.")) return;
+    trainingCancelButton.disabled = true;
+    trainingStopButton.disabled = true;
+    trainingMessage.textContent = "Cancelling the training process and preserving its checkpoints…";
+    try {
+        const run = await trainingRequest<TrainingRun>(`/runs/${encodeURIComponent(selectedTrainingRun)}/cancel`, {method: "POST"});
+        renderTrainingRun(run);
+        trainingMessage.textContent = "Training cancelled. Existing checkpoints were kept; you can start a new run now.";
+        await refreshCheckpoints();
+    } catch (error) {
+        trainingMessage.textContent = error instanceof Error ? error.message : "Could not cancel training.";
+        await refreshTrainingRuns(selectedTrainingRun);
     }
 }
 
@@ -3168,6 +3189,7 @@ trainingButton.addEventListener("click", () => setTrainingOpen(trainingPanel.has
 trainingCloseButton.addEventListener("click", () => setTrainingOpen(false));
 trainingStartButton.addEventListener("click", () => void startTraining());
 trainingStopButton.addEventListener("click", () => void stopTraining());
+trainingCancelButton.addEventListener("click", () => void cancelTraining());
 trainingRunSelect.addEventListener("change", () => {
     selectedTrainingRun = trainingRunSelect.value;
     void refreshTrainingRuns(selectedTrainingRun);
