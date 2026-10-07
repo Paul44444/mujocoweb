@@ -148,6 +148,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             </button>
             <button id="codeEditorButton" class="setup-button" type="button" aria-controls="codeEditorPane" aria-expanded="false">Code editor</button>
             <button id="trainingButton" class="setup-button" type="button" aria-controls="trainingPanel" aria-expanded="false">Training</button>
+            <button id="isaacDesktopButton" class="setup-button" type="button" title="Open the current scene in Isaac Lab on the backend computer">Open in Isaac Lab</button>
             <button id="sceneEditButton" class="setup-button" type="button" hidden>Edit scene</button>
             <button id="startButton" type="button">
               <span class="playback-icon play-icon" aria-hidden="true"></span>
@@ -690,6 +691,7 @@ const startButton =
     document.querySelector<HTMLButtonElement>("#startButton")!;
 const sceneEditButton = document.querySelector<HTMLButtonElement>("#sceneEditButton")!;
 const trainingButton = document.querySelector<HTMLButtonElement>("#trainingButton")!;
+const isaacDesktopButton = document.querySelector<HTMLButtonElement>("#isaacDesktopButton")!;
 const trainingPanel = document.querySelector<HTMLElement>("#trainingPanel")!;
 const trainingCloseButton = document.querySelector<HTMLButtonElement>("#trainingCloseButton")!;
 const trainingStartButton = document.querySelector<HTMLButtonElement>("#trainingStartButton")!;
@@ -1415,6 +1417,19 @@ function updateTrainingUi(): void {
     trainingMessage.textContent = usesIsaac
         ? "Ready for isolated GPU training with parallel environments."
         : "Ready to create an isolated training run.";
+}
+
+async function openIsaacDesktop(): Promise<void> {
+    isaacDesktopButton.disabled = true;
+    setStatus("Opening Isaac Lab on this computer…", "connecting");
+    try {
+        const result = await trainingRequest<{status: string; estimated_seconds?: number}>("/isaac-desktop", {method: "POST"});
+        setStatus(result.status === "running" ? "Isaac Lab Desktop is already open" : "Isaac Lab Desktop is starting — about 30 seconds", "connected");
+    } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Could not open Isaac Lab Desktop.", "error");
+    } finally {
+        window.setTimeout(() => { isaacDesktopButton.disabled = selectedSimulationEngine !== "isaaclab"; }, 3000);
+    }
 }
 
 async function startTraining(): Promise<void> {
@@ -2612,6 +2627,8 @@ function updateEngineUi(): void {
     });
     cameraHelp.textContent = "Left-drag to orbit · Middle-drag or Shift-drag to pan · Scroll or pinch to zoom";
     trainingButton.disabled = false;
+    isaacDesktopButton.hidden = usesMujoco;
+    isaacDesktopButton.disabled = usesMujoco;
     trainingButton.title = usesMujoco ? "Open DAPG training" : "Open parallel Isaac Lab training";
     checkpointToolbar.hidden = usesMujoco;
     isaacTaskSelect.hidden = usesMujoco;
@@ -3186,6 +3203,7 @@ function displayFrame(frameBlob: Blob): void {
 startButton.addEventListener("click", handlePlaybackButton);
 sceneEditButton.addEventListener("click", returnToSceneEditor);
 trainingButton.addEventListener("click", () => setTrainingOpen(trainingPanel.hasAttribute("hidden")));
+isaacDesktopButton.addEventListener("click", () => void openIsaacDesktop());
 trainingCloseButton.addEventListener("click", () => setTrainingOpen(false));
 trainingStartButton.addEventListener("click", () => void startTraining());
 trainingStopButton.addEventListener("click", () => void stopTraining());
