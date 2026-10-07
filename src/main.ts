@@ -148,6 +148,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
             </button>
             <button id="codeEditorButton" class="setup-button" type="button" aria-controls="codeEditorPane" aria-expanded="false">Code editor</button>
             <button id="trainingButton" class="setup-button" type="button" aria-controls="trainingPanel" aria-expanded="false">Training</button>
+            <button id="demoModeButton" class="setup-button" type="button" aria-controls="demoPanel" aria-expanded="false">● Demo</button>
             <button id="isaacDesktopButton" class="setup-button" type="button" title="Open the current scene in Isaac Lab on the backend computer">Open in Isaac Lab</button>
             <button id="sceneEditButton" class="setup-button" type="button" hidden>Edit scene</button>
             <button id="startButton" type="button">
@@ -164,6 +165,15 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <p id="sceneAccountMessage" class="generator-message" aria-live="polite"></p>
           <p id="sceneMessage" class="generator-message" aria-live="polite"></p>
         </div>
+
+        <section id="demoPanel" class="demo-panel" hidden>
+          <div class="demo-panel-copy"><strong>Demonstration mode</strong><span>Move the end effector with the keyboard and record observation/action pairs for imitation learning.</span></div>
+          <label>Name<input id="demoNameInput" value="Test tube grasp" maxlength="64" /></label>
+          <div class="demo-actions"><button id="demoRecordButton" class="apply-button" type="button">Start recording</button><button id="demoStopButton" class="secondary-button" type="button" disabled>Stop & save</button></div>
+          <div class="demo-keymap"><kbd>←</kbd><kbd>→</kbd> X &nbsp; <kbd>↑</kbd><kbd>↓</kbd> Y &nbsp; <kbd>PageUp</kbd><kbd>PageDown</kbd> Z &nbsp; <kbd>O</kbd> Open &nbsp; <kbd>C</kbd> Close</div>
+          <div class="demo-library"><select id="demoSelect"><option value="">No saved demonstrations</option></select><button id="demoPlayButton" class="secondary-button" type="button" disabled>Play demo</button></div>
+          <p id="demoMessage" class="generator-message" aria-live="polite">Isaac Lab only. Click Start recording, then keep the movement keys pressed.</p>
+        </section>
 
         <div class="simulation-window">
           <img
@@ -691,6 +701,14 @@ const startButton =
     document.querySelector<HTMLButtonElement>("#startButton")!;
 const sceneEditButton = document.querySelector<HTMLButtonElement>("#sceneEditButton")!;
 const trainingButton = document.querySelector<HTMLButtonElement>("#trainingButton")!;
+const demoModeButton = document.querySelector<HTMLButtonElement>("#demoModeButton")!;
+const demoPanel = document.querySelector<HTMLElement>("#demoPanel")!;
+const demoNameInput = document.querySelector<HTMLInputElement>("#demoNameInput")!;
+const demoRecordButton = document.querySelector<HTMLButtonElement>("#demoRecordButton")!;
+const demoStopButton = document.querySelector<HTMLButtonElement>("#demoStopButton")!;
+const demoSelect = document.querySelector<HTMLSelectElement>("#demoSelect")!;
+const demoPlayButton = document.querySelector<HTMLButtonElement>("#demoPlayButton")!;
+const demoMessage = document.querySelector<HTMLParagraphElement>("#demoMessage")!;
 const isaacDesktopButton = document.querySelector<HTMLButtonElement>("#isaacDesktopButton")!;
 const trainingPanel = document.querySelector<HTMLElement>("#trainingPanel")!;
 const trainingCloseButton = document.querySelector<HTMLButtonElement>("#trainingCloseButton")!;
@@ -2847,6 +2865,71 @@ function sendSimulationCommand(command: Record<string, unknown>): boolean {
     return true;
 }
 
+let demoRecording = false;
+const demoKeys = new Set<string>();
+
+function currentDemoControl(): {movement: number[]; gripper: number} {
+    const axis = (positive: string, negative: string) => Number(demoKeys.has(positive)) - Number(demoKeys.has(negative));
+    return {
+        movement: [axis("ArrowRight", "ArrowLeft"), axis("ArrowUp", "ArrowDown"), axis("PageUp", "PageDown")],
+        gripper: demoKeys.has("o") ? 1 : demoKeys.has("c") ? -1 : 0,
+    };
+}
+
+function sendDemoControl(): void {
+    if (!demoRecording) return;
+    sendSimulationCommand({type: "demo_control", user: sceneUserInput.value || "Guest", name: demoNameInput.value || "Demo", ...currentDemoControl()});
+}
+
+async function refreshDemos(): Promise<void> {
+    const user = encodeURIComponent(sceneUserInput.value.trim() || "Guest");
+    try {
+        const response = await fetch(backendHttpUrl(`/api/isaac/demos/${user}`), {cache: "no-store"});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json() as {demos?: Array<{id: string; name: string; steps: number; duration: number}>};
+        const demos = data.demos ?? [];
+        demoSelect.replaceChildren(...(demos.length
+            ? demos.map((demo) => new Option(`${demo.name} · ${demo.steps} steps · ${demo.duration.toFixed(1)} s`, demo.id))
+            : [new Option("No saved demonstrations", "")]));
+        demoPlayButton.disabled = !demoSelect.value;
+    } catch (error) {
+        demoMessage.textContent = `Could not load demonstrations: ${error instanceof Error ? error.message : String(error)}`;
+    }
+}
+
+function setDemoPanelOpen(open: boolean): void {
+    demoPanel.hidden = !open;
+    demoModeButton.setAttribute("aria-expanded", String(open));
+    if (open) void refreshDemos();
+}
+
+function startDemoRecording(): void {
+    if (selectedSimulationEngine !== "isaaclab") {
+        demoMessage.textContent = "Demonstration control is currently available for Isaac Lab only.";
+        return;
+    }
+    if (!sendSimulationCommand({type: "demo_start", user: sceneUserInput.value || "Guest", name: demoNameInput.value || "Demo"})) {
+        demoMessage.textContent = "Connect the Isaac Lab simulation first.";
+        return;
+    }
+    demoRecording = true;
+    demoRecordButton.disabled = true;
+    demoStopButton.disabled = false;
+    demoMessage.textContent = "Recording · use the movement keys; O opens and C closes the gripper.";
+}
+
+function stopDemoRecording(): void {
+    if (!demoRecording) return;
+    demoKeys.clear();
+    sendSimulationCommand({type: "demo_control", movement: [0, 0, 0], gripper: 0, user: sceneUserInput.value || "Guest", name: demoNameInput.value || "Demo"});
+    sendSimulationCommand({type: "demo_stop", user: sceneUserInput.value || "Guest", name: demoNameInput.value || "Demo"});
+    demoRecording = false;
+    demoRecordButton.disabled = false;
+    demoStopButton.disabled = true;
+    demoMessage.textContent = "Demonstration saved. Refreshing library…";
+    window.setTimeout(() => void refreshDemos(), 700);
+}
+
 function isaacScenePayload(): SceneAsset[] {
     const supported = new Set(["box", "sphere", "cylinder", "kuka_allegro"]);
     const hideDefaultCube = selectedIsaacTask === "labware_lift" || selectedIsaacTask === "labware";
@@ -3162,6 +3245,9 @@ function handleTextMessage(message: string): void {
                 typeof data.simulation_time === "number"
                     ? `${data.simulation_time.toFixed(2)} s`
                     : "—";
+            if (data.demo_recording === true && typeof data.demo_steps === "number") {
+                demoMessage.textContent = `Recording · ${data.demo_steps} observation/action pairs captured`;
+            }
         }
 
         if (data.type === "status") {
@@ -3203,6 +3289,14 @@ function displayFrame(frameBlob: Blob): void {
 startButton.addEventListener("click", handlePlaybackButton);
 sceneEditButton.addEventListener("click", returnToSceneEditor);
 trainingButton.addEventListener("click", () => setTrainingOpen(trainingPanel.hasAttribute("hidden")));
+demoModeButton.addEventListener("click", () => setDemoPanelOpen(demoPanel.hasAttribute("hidden")));
+demoRecordButton.addEventListener("click", startDemoRecording);
+demoStopButton.addEventListener("click", stopDemoRecording);
+demoSelect.addEventListener("change", () => { demoPlayButton.disabled = !demoSelect.value; });
+demoPlayButton.addEventListener("click", () => {
+    if (!demoSelect.value || !sendSimulationCommand({type: "demo_play", id: demoSelect.value})) return;
+    demoMessage.textContent = "Playing saved demonstration from its initial state…";
+});
 isaacDesktopButton.addEventListener("click", () => void openIsaacDesktop());
 trainingCloseButton.addEventListener("click", () => setTrainingOpen(false));
 trainingStartButton.addEventListener("click", () => void startTraining());
@@ -3495,7 +3589,17 @@ setupForm.addEventListener("submit", (event) => {
     closeSetupPanel();
 });
 
+const demoControlKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "o", "c"]);
 document.addEventListener("keydown", (event) => {
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (demoRecording && demoControlKeys.has(key) && !(event.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable='true'], .cm-editor")) {
+        event.preventDefault();
+        if (!demoKeys.has(key)) {
+            demoKeys.add(key);
+            sendDemoControl();
+        }
+        return;
+    }
     if ((event.key === "Delete" || event.key === "Backspace") && selectedSceneAsset >= 0 && editorPreviewActive) {
         const target = event.target as HTMLElement | null;
         if (!target?.closest("input, textarea, select, button, [contenteditable='true'], .cm-editor")) {
@@ -3516,6 +3620,14 @@ document.addEventListener("keydown", (event) => {
     else if (workbench.classList.contains("logs-open")) setLogsOpen(false);
 });
 
+document.addEventListener("keyup", (event) => {
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (!demoRecording || !demoControlKeys.has(key)) return;
+    event.preventDefault();
+    demoKeys.delete(key);
+    sendDemoControl();
+});
+
 document.addEventListener("pointerdown", (event) => {
     const target = event.target as Node;
     if (!sceneContextMenu.hidden && !sceneContextMenu.contains(target)) closeSceneContextMenu();
@@ -3526,6 +3638,7 @@ document.addEventListener("pointerdown", (event) => {
 });
 
 window.addEventListener("beforeunload", () => {
+    if (demoRecording) sendSimulationCommand({type: "demo_stop", user: sceneUserInput.value || "Guest", name: demoNameInput.value || "Demo"});
     socket?.close();
 
     if (currentImageUrl) {

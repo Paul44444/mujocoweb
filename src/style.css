@@ -1625,6 +1625,19 @@ body.panel-open {
 .scene-account-row button { flex: 0 0 auto; white-space: nowrap; }
 .scene-account-panel .generator-message { grid-column: 1 / -1; margin: 0; }
 
+.demo-panel { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(160px, .45fr) auto; gap: 12px; align-items: end; padding: 14px 24px; border-top: 1px solid #303038; border-bottom: 1px solid #303038; background: #111116; color: #e4e4e7; }
+.demo-panel[hidden] { display: none; }
+.demo-panel-copy { display: grid; gap: 3px; }
+.demo-panel-copy span, .demo-keymap { color: #a1a1aa; font-size: .78rem; }
+.demo-panel label { display: grid; gap: 5px; color: #a1a1aa; font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; }
+.demo-panel input, .demo-panel select { min-width: 0; padding: 9px 10px; border: 1px solid #3f3f46; border-radius: 8px; background: #09090b; color: #f4f4f5; }
+.demo-actions, .demo-library { display: flex; gap: 8px; align-items: center; }
+.demo-keymap { grid-column: 1 / -1; }
+.demo-keymap kbd { display: inline-block; min-width: 25px; padding: 3px 6px; border: 1px solid #52525b; border-bottom-width: 2px; border-radius: 5px; background: #202026; color: #fafafa; text-align: center; }
+.demo-library { grid-column: 1 / 3; }
+.demo-library select { flex: 1; }
+.demo-panel .generator-message { margin: 0; }
+
 .scene-draft {
     min-height: 82px;
     padding: 12px;
