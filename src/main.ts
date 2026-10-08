@@ -694,6 +694,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <label class="training-run-history"><span>Progress history · one entry per training run</span><select id="trainingRunSelect" aria-label="Training run progress history"><option value="">No runs yet</option></select></label>
     </div>
     <p id="trainingMessage" class="generator-message" aria-live="polite">Ready to create an isolated training run.</p>
+    <p id="trainingImitationResult" class="generator-message" hidden></p>
     <div class="training-metrics">
       <article><span>Status</span><strong id="trainingStatus">Idle</strong></article>
       <article><span>Iteration</span><strong id="trainingIteration">0 / 0</strong></article>
@@ -1012,6 +1013,7 @@ type TrainingRun = {
     config: {name?: string; engine?: SimulationEngine; isaac_task?: IsaacTask; iterations?: number; trajectories?: number; horizon?: number; num_envs?: number; seed?: number; demo_ids?: string[]; bc_epochs?: number};
     metrics: TrainingMetric[];
     bc_metrics?: BehaviorCloningMetric[];
+    bc_validation?: {ee_rmse_m?: number; lifted?: boolean; steps?: number; demo_steps?: number};
     checkpoints: string[];
 };
 type IsaacCheckpoint = {id: string; run_id: string; name: string; label: string; modified_at: number; deletable: boolean; isaac_task?: IsaacTask};
@@ -1111,6 +1113,10 @@ function chartMarkers(points: string[], radius: number, color: string): string {
 }
 
 function renderTrainingRun(run: TrainingRun | null): void {
+    const imitationResult = document.querySelector<HTMLElement>("#trainingImitationResult")!;
+    const validation = run?.bc_validation;
+    imitationResult.hidden = validation?.ee_rmse_m == null;
+    if (validation?.ee_rmse_m != null) imitationResult.textContent = `BC physics test · Gripper trajectory error ${(validation.ee_rmse_m * 100).toFixed(2)} cm · Lift ${validation.lifted ? "successful" : "not yet successful"} · ${validation.steps}/${validation.demo_steps} steps`;
     if (!run) {
         trainingStatus.textContent = "Idle";
         trainingIteration.textContent = "0 / 0";
