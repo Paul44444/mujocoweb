@@ -998,6 +998,7 @@ type TrainingRun = {
     checkpoints: string[];
 };
 type IsaacCheckpoint = {id: string; run_id: string; name: string; label: string; modified_at: number; deletable: boolean; isaac_task?: IsaacTask};
+type DemoRecord = {id: string; name: string; steps: number; duration: number; task?: string};
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
 let selectedTrainingRun = "";
@@ -1007,6 +1008,8 @@ type TrainingChartState = {metrics: TrainingMetric[]; rewardRange: ChartRange; l
 let trainingChartState: TrainingChartState | null = null;
 let activePolicyCheckpoint: string | null = null;
 let availablePolicyCheckpoints: IsaacCheckpoint[] = [];
+let availableDemos: DemoRecord[] = [];
+let selectedDemoId = "";
 const sceneAssetsByEngine: Record<SimulationEngine, SceneAsset[]> = {
     isaaclab: [{id: "training-cube", asset: "box", position: [0.45, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
     mujoco: [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
@@ -2894,9 +2897,6 @@ function sendSimulationCommand(command: Record<string, unknown>): boolean {
 
 let demoRecording = false;
 const demoKeys = new Set<string>();
-type DemoRecord = {id: string; name: string; steps: number; duration: number; task?: string};
-let availableDemos: DemoRecord[] = [];
-let selectedDemoId = "";
 
 function currentDemoControl(): {movement: number[]; gripper: number} {
     const pressed = (...keys: string[]) => keys.some((key) => demoKeys.has(key));
