@@ -2901,6 +2901,7 @@ function sendSimulationCommand(command: Record<string, unknown>): boolean {
 }
 
 let demoRecording = false;
+let demoPlaybackActive = false;
 const demoKeys = new Set<string>();
 
 function currentDemoControl(): {movement: number[]; gripper: number} {
@@ -3399,6 +3400,16 @@ function handleTextMessage(message: string): void {
             if (data.demo_recording === true && typeof data.demo_steps === "number") {
                 demoMessage.textContent = `Recording · ${data.demo_steps} observation/action pairs captured`;
             }
+            if (demoPlaybackActive && data.mode === "demo_playback") {
+                const current = Number(data.demo_playback_step ?? 0);
+                const total = Number(data.demo_playback_steps ?? 0);
+                demoMessage.textContent = total > 0
+                    ? `Playing demonstration · ${Math.min(current, total)} / ${total} steps`
+                    : "Playing saved demonstration from its initial state…";
+            } else if (demoPlaybackActive && data.mode !== "demo_playback") {
+                demoPlaybackActive = false;
+                demoMessage.textContent = "Demonstration playback finished.";
+            }
         }
 
         if (data.type === "status") {
@@ -3451,6 +3462,7 @@ demoStopButton.addEventListener("click", stopDemoRecording);
 demoLibraryToggle.addEventListener("click", () => setDemoLibraryOpen(demoLibraryPanel.hasAttribute("hidden")));
 demoPlayButton.addEventListener("click", () => {
     if (!selectedDemoId || !sendSimulationCommand({type: "demo_play", id: selectedDemoId})) return;
+    demoPlaybackActive = true;
     demoMessage.textContent = "Playing saved demonstration from its initial state…";
 });
 isaacDesktopButton.addEventListener("click", () => void openIsaacDesktop());
