@@ -1028,6 +1028,7 @@ let availablePolicyCheckpoints: IsaacCheckpoint[] = [];
 let availableDemos: DemoRecord[] = [];
 let policyEvaluationDemos: DemoRecord[] = [];
 let selectedDemoId = "";
+let policyEvaluationActive = false;
 const sceneAssetsByEngine: Record<SimulationEngine, SceneAsset[]> = {
     isaaclab: [{id: "training-cube", asset: "box", position: [0.45, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
     mujoco: [{id: "training-cube", asset: "box", position: [0, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
@@ -1409,6 +1410,7 @@ async function loadPolicyCheckpoint(): Promise<void> {
 async function selectIsaacTask(task: IsaacTask): Promise<void> {
     const previous = selectedIsaacTask;
     selectedIsaacTask = task;
+    policyEvaluationActive = false;
     isaacTaskSelect.disabled = true;
     resetSimulationForConfiguration();
     applyConfiguration();
@@ -3211,8 +3213,10 @@ function loadPolicyEvaluationStart(): boolean {
         type: "policy_evaluate",
         id: demoId,
         position_variation: variationCm / 100,
+        pause_after_load: true,
     });
     if (sent) {
+        policyEvaluationActive = true;
         isPaused = true;
         pendingPauseState = true;
         updatePlaybackButton();
@@ -3557,8 +3561,17 @@ function displayFrame(frameBlob: Blob): void {
 
 startButton.addEventListener("click", handlePlaybackButton);
 episodeResetButton.addEventListener("click", () => {
-    if (!sendSimulationCommand({type: "reset_episode"})) return;
-    setStatus("Resetting robot and task object…", "connecting");
+    const evaluationReset = policyEvaluationActive && Boolean(policyEvaluationDemoSelect.value) && Boolean(activePolicyCheckpoint);
+    const command = evaluationReset
+        ? {
+            type: "policy_evaluate",
+            id: policyEvaluationDemoSelect.value,
+            position_variation: Number(policyEvaluationVariation.value) / 100,
+            pause_after_load: isPaused,
+        }
+        : {type: "reset_episode"};
+    if (!sendSimulationCommand(command)) return;
+    setStatus(evaluationReset ? "Restoring policy-test start…" : "Resetting robot and task object…", "connecting");
     window.setTimeout(() => setStatus(isPaused ? "Simulation reset and stopped" : "Simulation running", "connected"), 400);
 });
 sceneEditButton.addEventListener("click", returnToSceneEditor);
