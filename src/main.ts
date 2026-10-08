@@ -3562,15 +3562,18 @@ function displayFrame(frameBlob: Blob): void {
 startButton.addEventListener("click", handlePlaybackButton);
 episodeResetButton.addEventListener("click", () => {
     const evaluationReset = policyEvaluationActive && Boolean(policyEvaluationDemoSelect.value) && Boolean(activePolicyCheckpoint);
-    const command = evaluationReset
-        ? {
+    // Always retain Isaac's ordinary reset as the reliable baseline. In
+    // evaluation mode the recorded initial state is restored immediately
+    // afterwards, replacing the environment's randomized object pose.
+    if (!sendSimulationCommand({type: "reset_episode"})) return;
+    if (evaluationReset) {
+        sendSimulationCommand({
             type: "policy_evaluate",
             id: policyEvaluationDemoSelect.value,
             position_variation: Number(policyEvaluationVariation.value) / 100,
             pause_after_load: isPaused,
-        }
-        : {type: "reset_episode"};
-    if (!sendSimulationCommand(command)) return;
+        });
+    }
     setStatus(evaluationReset ? "Restoring policy-test start…" : "Resetting robot and task object…", "connecting");
     window.setTimeout(() => setStatus(isPaused ? "Simulation reset and stopped" : "Simulation running", "connected"), 400);
 });
