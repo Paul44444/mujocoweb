@@ -159,6 +159,14 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           </div>
         </div>
 
+        <section id="policyEvaluationControls" class="policy-evaluation-controls" aria-label="Policy evaluation from demonstration">
+          <div class="policy-evaluation-copy"><strong>Policy test start</strong><span>Restore the selected demonstration's initial state, then test the loaded policy.</span></div>
+          <label>Demonstration<select id="policyEvaluationDemoSelect" aria-label="Demonstration start state"><option value="">No demonstration available</option></select></label>
+          <label for="policyEvaluationVariation">Test-tube variation <strong id="policyEvaluationVariationValue">±0.0 cm</strong></label>
+          <input id="policyEvaluationVariation" type="range" min="0" max="10" step="0.5" value="0" />
+          <button id="policyEvaluationLoadButton" class="secondary-button" type="button" disabled>Load demo start</button>
+        </section>
+
         <div id="sceneAccountPanel" class="scene-account-panel" hidden>
           <div class="scene-account-copy"><strong>Test accounts</strong><span>No password is required in this version, so scenes are not private yet.</span></div>
           <div class="scene-account-field"><label for="sceneUserSelect">Existing users</label><div class="scene-account-row"><select id="sceneUserSelect" class="setup-select"><option value="">Loading users…</option></select><button id="sceneExistingUserButton" class="secondary-button" type="button">Open user</button></div></div>
@@ -174,12 +182,6 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <div class="demo-keymap"><kbd>W</kbd><kbd>S</kbd> / <kbd>→</kbd><kbd>←</kbd> X &nbsp; <kbd>A</kbd><kbd>D</kbd> / <kbd>↑</kbd><kbd>↓</kbd> Y &nbsp; <kbd>Q</kbd><kbd>E</kbd> / <kbd>PageDown</kbd><kbd>PageUp</kbd> Z &nbsp; <kbd>O</kbd> Open &nbsp; <kbd>I</kbd> Close</div>
           <div class="demo-library"><button id="demoLibraryToggle" class="demo-library-toggle" type="button" aria-expanded="false"><span id="demoLibraryLabel">Saved demonstrations</span><span id="demoLibraryChevron" aria-hidden="true">▾</span></button><button id="demoPlayButton" class="secondary-button" type="button" disabled>Play selected demo</button></div>
           <div id="demoLibraryPanel" class="demo-library-panel" hidden><p>No saved demonstrations yet.</p></div>
-          <div id="policyEvaluationControls" class="policy-evaluation-controls">
-            <label class="policy-evaluation-toggle"><input id="policyEvaluationEnabled" type="checkbox" /> Test loaded policy from selected demo start</label>
-            <label for="policyEvaluationVariation">Test-tube position variation <strong id="policyEvaluationVariationValue">±0.0 cm</strong></label>
-            <input id="policyEvaluationVariation" type="range" min="0" max="10" step="0.5" value="0" disabled />
-            <small>0 cm reproduces the recorded start. Increase the range to test robustness around it.</small>
-          </div>
           <p id="demoMessage" class="generator-message" aria-live="polite">Isaac Lab only. Click Start recording, then keep the movement keys pressed.</p>
         </section>
 
@@ -719,9 +721,11 @@ const demoRecordButton = document.querySelector<HTMLButtonElement>("#demoRecordB
 const demoStopButton = document.querySelector<HTMLButtonElement>("#demoStopButton")!;
 const demoLibraryToggle = document.querySelector<HTMLButtonElement>("#demoLibraryToggle")!;
 const demoLibraryLabel = document.querySelector<HTMLElement>("#demoLibraryLabel")!;
-const policyEvaluationEnabled = document.querySelector<HTMLInputElement>("#policyEvaluationEnabled")!;
+const policyEvaluationControls = document.querySelector<HTMLElement>("#policyEvaluationControls")!;
+const policyEvaluationDemoSelect = document.querySelector<HTMLSelectElement>("#policyEvaluationDemoSelect")!;
 const policyEvaluationVariation = document.querySelector<HTMLInputElement>("#policyEvaluationVariation")!;
 const policyEvaluationVariationValue = document.querySelector<HTMLElement>("#policyEvaluationVariationValue")!;
+const policyEvaluationLoadButton = document.querySelector<HTMLButtonElement>("#policyEvaluationLoadButton")!;
 const demoLibraryChevron = document.querySelector<HTMLElement>("#demoLibraryChevron")!;
 const demoLibraryPanel = document.querySelector<HTMLElement>("#demoLibraryPanel")!;
 const demoPlayButton = document.querySelector<HTMLButtonElement>("#demoPlayButton")!;
@@ -1258,6 +1262,7 @@ async function refreshCheckpoints(): Promise<void> {
         trainingResumeSelect.value = resumeValue;
         checkpointLoadButton.disabled = false;
         renderCheckpointMenu();
+        renderPolicyEvaluationOptions();
     } catch (error) {
         checkpointLoadButton.disabled = true;
         trainingMessage.textContent = error instanceof Error ? error.message : "Could not load checkpoints.";
@@ -1370,6 +1375,7 @@ async function loadPolicyCheckpoint(): Promise<void> {
             if (result.worker?.status === "ready" && (result.worker.checkpoint ?? null) === expected) {
                 activePolicyCheckpoint = expected;
                 renderCheckpointMenu();
+                renderPolicyEvaluationOptions();
                 if (selection.hot_swap) {
                     setStatus("Trained policy active", "connected");
                 } else {
@@ -2700,6 +2706,7 @@ function updateEngineUi(): void {
     isaacDesktopButton.disabled = usesMujoco;
     trainingButton.title = usesMujoco ? "Open DAPG training" : "Open parallel Isaac Lab training";
     checkpointToolbar.hidden = usesMujoco;
+    policyEvaluationControls.hidden = usesMujoco;
     episodeResetButton.hidden = usesMujoco;
     episodeResetButton.disabled = usesMujoco || !socket || socket.readyState !== WebSocket.OPEN || demoRecording;
     isaacTaskSelect.hidden = usesMujoco;
@@ -2709,6 +2716,7 @@ function updateEngineUi(): void {
     if (!trainingPanel.hidden) void refreshTrainingRuns();
     if (!usesMujoco) {
         void refreshCheckpoints();
+        void refreshDemos();
         void syncIsaacTaskSelection();
     }
     resetCameraButton.disabled = !socket || socket.readyState !== WebSocket.OPEN;
@@ -2946,9 +2954,28 @@ async function refreshDemos(): Promise<void> {
         if (!availableDemos.some((demo) => demo.id === selectedDemoId)) selectedDemoId = availableDemos[0]?.id ?? "";
         renderDemoLibrary();
         renderTrainingDemoOptions();
+        renderPolicyEvaluationOptions();
     } catch (error) {
         demoMessage.textContent = `Could not load demonstrations: ${error instanceof Error ? error.message : String(error)}`;
     }
+}
+
+function renderPolicyEvaluationOptions(): void {
+    const compatible = availableDemos.filter((demo) => demo.task === selectedIsaacTask);
+    const previous = policyEvaluationDemoSelect.value || selectedDemoId;
+    policyEvaluationDemoSelect.replaceChildren(
+        ...(compatible.length
+            ? compatible.map((demo) => new Option(`${demo.name} · ${demo.duration.toFixed(1)} s`, demo.id))
+            : [new Option("No compatible demonstration", "")]),
+    );
+    policyEvaluationDemoSelect.value = compatible.some((demo) => demo.id === previous)
+        ? previous
+        : compatible[0]?.id ?? "";
+    if (policyEvaluationDemoSelect.value) selectedDemoId = policyEvaluationDemoSelect.value;
+    policyEvaluationLoadButton.disabled = !policyEvaluationDemoSelect.value || !activePolicyCheckpoint;
+    policyEvaluationLoadButton.title = !activePolicyCheckpoint
+        ? "Load a trained policy first"
+        : "Restore this demonstration start and pause before evaluation";
 }
 
 function renderTrainingDemoOptions(): void {
@@ -2977,6 +3004,9 @@ function renderDemoLibrary(): void {
         ? `Saved demonstrations · ${availableDemos.length}`
         : "Saved demonstrations · empty";
     demoPlayButton.disabled = !selectedDemoId;
+    if (policyEvaluationDemoSelect.querySelector(`option[value="${CSS.escape(selectedDemoId)}"]`)) {
+        policyEvaluationDemoSelect.value = selectedDemoId;
+    }
     demoLibraryPanel.replaceChildren();
     if (!availableDemos.length) {
         const empty = document.createElement("p");
@@ -3127,7 +3157,6 @@ function isaacScenePayload(): SceneAsset[] {
 
 function togglePause(): void {
     const nextPaused = !isPaused;
-    if (!nextPaused) applyPolicyEvaluationStart();
     if (!sendSimulationCommand({type: "set_paused", paused: nextPaused})) return;
     pendingPauseState = nextPaused;
     isPaused = nextPaused;
@@ -3135,22 +3164,25 @@ function togglePause(): void {
     setStatus(isPaused ? "Simulation stopped" : "Simulation running", "connected");
 }
 
-function applyPolicyEvaluationStart(): boolean {
-    if (!policyEvaluationEnabled.checked || selectedSimulationEngine !== "isaaclab") return false;
-    if (!selectedDemoId) {
-        demoMessage.textContent = "Select a saved demonstration before enabling policy evaluation.";
+function loadPolicyEvaluationStart(): boolean {
+    const demoId = policyEvaluationDemoSelect.value;
+    if (!demoId || selectedSimulationEngine !== "isaaclab") {
+        setStatus("Select a compatible demonstration first", "error");
         return false;
     }
     const variationCm = Number(policyEvaluationVariation.value);
     const sent = sendSimulationCommand({
         type: "policy_evaluate",
-        id: selectedDemoId,
+        id: demoId,
         position_variation: variationCm / 100,
     });
     if (sent) {
-        demoMessage.textContent = variationCm === 0
-            ? "Policy test started from the demonstration's exact initial state."
-            : `Policy test started with test-tube position randomized by up to ±${variationCm.toFixed(1)} cm.`;
+        isPaused = true;
+        pendingPauseState = true;
+        updatePlaybackButton();
+        setStatus(variationCm === 0
+            ? "Demo start loaded exactly — press Start simulation to evaluate"
+            : `Demo start loaded with up to ±${variationCm.toFixed(1)} cm variation — press Start simulation`, "connected");
     }
     return sent;
 }
@@ -3338,7 +3370,6 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         });
         if (selectedSimulationEngine === "isaaclab") {
             sendSimulationCommand({type: "scene_replace", assets: isaacScenePayload()});
-            applyPolicyEvaluationStart();
         }
     };
 
@@ -3505,15 +3536,14 @@ demoPlayButton.addEventListener("click", () => {
     demoPlaybackActive = true;
     demoMessage.textContent = "Playing saved demonstration from its initial state…";
 });
-policyEvaluationEnabled.addEventListener("change", () => {
-    policyEvaluationVariation.disabled = !policyEvaluationEnabled.checked;
-    if (policyEvaluationEnabled.checked && !selectedDemoId) {
-        demoMessage.textContent = "Select a saved demonstration to use its initial robot and object state.";
-    }
+policyEvaluationDemoSelect.addEventListener("change", () => {
+    selectedDemoId = policyEvaluationDemoSelect.value;
+    renderDemoLibrary();
 });
 policyEvaluationVariation.addEventListener("input", () => {
     policyEvaluationVariationValue.textContent = `±${Number(policyEvaluationVariation.value).toFixed(1)} cm`;
 });
+policyEvaluationLoadButton.addEventListener("click", () => loadPolicyEvaluationStart());
 isaacDesktopButton.addEventListener("click", () => void openIsaacDesktop());
 trainingCloseButton.addEventListener("click", () => setTrainingOpen(false));
 trainingStartButton.addEventListener("click", () => void startTraining());

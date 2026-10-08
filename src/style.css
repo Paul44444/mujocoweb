@@ -458,11 +458,14 @@ h1 {
 .training-chart-legend span::before { content: ""; display: inline-block; width: 18px; height: 3px; margin-right: 6px; vertical-align: middle; border-radius: 2px; background: #a3e635; }
 .training-chart-legend .loss::before { background: #60a5fa; }
 .training-chart-legend .bc-loss::before { background: #c084fc; }
-.policy-evaluation-controls { display: grid; grid-template-columns: minmax(230px, auto) minmax(190px, 1fr); align-items: center; gap: 7px 14px; padding: 10px 12px; border: 1px solid rgba(192, 132, 252, 0.28); border-radius: 9px; background: rgba(192, 132, 252, 0.055); }
-.policy-evaluation-controls label { color: #d4d4d8; font-size: 0.78rem; }
-.policy-evaluation-toggle { display: flex; align-items: center; gap: 7px; }
+.policy-evaluation-controls { display: grid; grid-template-columns: minmax(220px, 1.3fr) minmax(190px, 1fr) auto minmax(130px, .8fr) auto; align-items: center; gap: 8px 12px; padding: 9px 16px; border-top: 1px solid rgba(192, 132, 252, 0.28); border-bottom: 1px solid rgba(192, 132, 252, 0.2); background: rgba(192, 132, 252, 0.055); }
+.policy-evaluation-controls[hidden] { display: none; }
+.policy-evaluation-controls label { display: grid; gap: 3px; color: #a1a1aa; font-size: 0.7rem; text-transform: uppercase; letter-spacing: .04em; }
+.policy-evaluation-controls select { min-width: 0; padding: 7px 9px; border: 1px solid #3f3f46; border-radius: 7px; color: #f4f4f5; background: #09090b; }
+.policy-evaluation-copy { display: grid; gap: 2px; }
+.policy-evaluation-copy strong { color: #e9d5ff; font-size: .82rem; }
+.policy-evaluation-copy span { color: #8f8f99; font-size: .72rem; }
 .policy-evaluation-controls input[type="range"] { width: 100%; accent-color: #c084fc; }
-.policy-evaluation-controls small { grid-column: 1 / -1; color: #8f8f99; }
 .training-checkpoints { display: grid; gap: 5px; margin-top: 12px; color: #a1a1aa; font-size: 0.78rem; }
 .training-checkpoints span { overflow-wrap: anywhere; color: #d4d4d8; }
 
@@ -471,6 +474,7 @@ h1 {
     .training-controls, .training-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .training-actions { grid-template-columns: 1fr 1fr; }
     .training-run-history { grid-column: 1 / -1; }
+    .policy-evaluation-controls { grid-template-columns: 1fr; }
 }
 
 .workbench.editor-open {
