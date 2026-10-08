@@ -1015,7 +1015,7 @@ type TrainingRun = {
     checkpoints: string[];
 };
 type IsaacCheckpoint = {id: string; run_id: string; name: string; label: string; modified_at: number; deletable: boolean; isaac_task?: IsaacTask};
-type DemoRecord = {id: string; name: string; steps: number; duration: number; task?: string};
+type DemoRecord = {id: string; name: string; steps: number; duration: number; task?: string; user?: string};
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
 let selectedTrainingRun = "";
@@ -1026,6 +1026,7 @@ let trainingChartState: TrainingChartState | null = null;
 let activePolicyCheckpoint: string | null = null;
 let availablePolicyCheckpoints: IsaacCheckpoint[] = [];
 let availableDemos: DemoRecord[] = [];
+let policyEvaluationDemos: DemoRecord[] = [];
 let selectedDemoId = "";
 const sceneAssetsByEngine: Record<SimulationEngine, SceneAsset[]> = {
     isaaclab: [{id: "training-cube", asset: "box", position: [0.45, 0, 0.035], rotation: [0, 0, 0], scale: [0.03, 0.03, 0.03], color: [0.15, 0.55, 0.95]}],
@@ -1263,6 +1264,7 @@ async function refreshCheckpoints(): Promise<void> {
         checkpointLoadButton.disabled = false;
         renderCheckpointMenu();
         renderPolicyEvaluationOptions();
+        void refreshCheckpointDemonstrations();
     } catch (error) {
         checkpointLoadButton.disabled = true;
         trainingMessage.textContent = error instanceof Error ? error.message : "Could not load checkpoints.";
@@ -1376,6 +1378,7 @@ async function loadPolicyCheckpoint(): Promise<void> {
                 activePolicyCheckpoint = expected;
                 renderCheckpointMenu();
                 renderPolicyEvaluationOptions();
+                void refreshCheckpointDemonstrations();
                 if (selection.hot_swap) {
                     setStatus("Trained policy active", "connected");
                 } else {
@@ -2951,21 +2954,54 @@ async function refreshDemos(): Promise<void> {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json() as {demos?: DemoRecord[]};
         availableDemos = data.demos ?? [];
+        policyEvaluationDemos = [...availableDemos];
         if (!availableDemos.some((demo) => demo.id === selectedDemoId)) selectedDemoId = availableDemos[0]?.id ?? "";
         renderDemoLibrary();
         renderTrainingDemoOptions();
         renderPolicyEvaluationOptions();
+        void refreshCheckpointDemonstrations();
     } catch (error) {
         demoMessage.textContent = `Could not load demonstrations: ${error instanceof Error ? error.message : String(error)}`;
     }
 }
 
+async function refreshCheckpointDemonstrations(): Promise<void> {
+    policyEvaluationDemos = [...availableDemos];
+    const checkpoint = availablePolicyCheckpoints.find((item) => item.id === activePolicyCheckpoint);
+    if (!checkpoint) {
+        renderPolicyEvaluationOptions();
+        return;
+    }
+    try {
+        const result = await trainingRequest<{runs: TrainingRun[]}>(`/runs?engine=isaaclab&isaac_task=${selectedIsaacTask}`);
+        const run = result.runs.find((item) => item.id === checkpoint.run_id);
+        const ids = run?.config.demo_ids ?? [];
+        for (const id of ids) {
+            if (policyEvaluationDemos.some((demo) => demo.id === id)) continue;
+            const separator = id.indexOf("/");
+            if (separator < 1) continue;
+            const user = id.slice(0, separator);
+            const response = await fetch(backendHttpUrl(`/api/isaac/demos/${encodeURIComponent(user)}`), {cache: "no-store"});
+            if (!response.ok) continue;
+            const data = await response.json() as {demos?: DemoRecord[]};
+            const demo = data.demos?.find((candidate) => candidate.id === id);
+            if (demo) policyEvaluationDemos.push({...demo, user});
+        }
+    } catch {
+        // The current user's compatible demos remain available as a fallback.
+    }
+    renderPolicyEvaluationOptions();
+}
+
 function renderPolicyEvaluationOptions(): void {
-    const compatible = availableDemos.filter((demo) => demo.task === selectedIsaacTask);
+    const compatible = policyEvaluationDemos.filter((demo) => demo.task === selectedIsaacTask);
     const previous = policyEvaluationDemoSelect.value || selectedDemoId;
     policyEvaluationDemoSelect.replaceChildren(
         ...(compatible.length
-            ? compatible.map((demo) => new Option(`${demo.name} · ${demo.duration.toFixed(1)} s`, demo.id))
+            ? compatible.map((demo) => {
+                const owner = demo.user ?? demo.id.split("/", 1)[0];
+                return new Option(`${demo.name} · ${owner} · ${demo.duration.toFixed(1)} s`, demo.id);
+            })
             : [new Option("No compatible demonstration", "")]),
     );
     policyEvaluationDemoSelect.value = compatible.some((demo) => demo.id === previous)
