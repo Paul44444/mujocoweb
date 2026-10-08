@@ -430,6 +430,9 @@ h1 {
 .training-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .training-controls label { display: grid; gap: 5px; color: #a1a1aa; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .training-controls input, .training-controls select, .training-actions select { min-width: 0; padding: 9px 10px; border: 1px solid #3f3f46; border-radius: 8px; background: #09090b; color: #f4f4f5; }
+.training-controls .training-demos-label { grid-column: span 2; }
+.training-demos-label select { min-height: 86px; }
+.training-demos-label small { color: #71717a; font-size: .68rem; letter-spacing: normal; text-transform: none; }
 .training-actions { display: grid; grid-template-columns: auto auto minmax(240px, 1fr); align-items: end; gap: 9px; margin-top: 12px; }
 .training-actions button { white-space: nowrap; }
 .training-cancel-button {

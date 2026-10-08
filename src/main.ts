@@ -674,6 +674,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <label id="trainingHorizonLabel">Horizon<input id="trainingHorizon" type="number" min="20" max="500" value="200" /></label>
       <label id="trainingEnvironmentsLabel" hidden>Parallel environments<select id="trainingEnvironments"><option value="16">16</option><option value="32">32</option><option value="64">64</option><option value="128">128</option><option value="256" selected>256 · recommended</option><option value="512">512 · experimental</option></select></label>
       <label id="trainingResumeLabel" hidden>Continue training from checkpoint<select id="trainingResumeSelect"><option value="">From scratch</option></select></label>
+      <label id="trainingDemosLabel" class="training-demos-label" hidden>Warm start from demonstrations<select id="trainingDemosSelect" multiple size="3" aria-label="Demonstrations used for behavior cloning"></select><small>Optional · Ctrl/Cmd-click selects several demos</small></label>
+      <label id="trainingBcEpochsLabel" hidden>Imitation epochs<input id="trainingBcEpochs" type="number" min="1" max="2000" step="1" value="200" /></label>
       <label>Seed<input id="trainingSeed" type="number" min="0" value="123" /></label>
     </div>
     <div class="training-actions">
@@ -732,6 +734,10 @@ const trainingEnvironmentsLabel = document.querySelector<HTMLElement>("#training
 const trainingEnvironments = document.querySelector<HTMLSelectElement>("#trainingEnvironments")!;
 const trainingResumeLabel = document.querySelector<HTMLElement>("#trainingResumeLabel")!;
 const trainingResumeSelect = document.querySelector<HTMLSelectElement>("#trainingResumeSelect")!;
+const trainingDemosLabel = document.querySelector<HTMLElement>("#trainingDemosLabel")!;
+const trainingDemosSelect = document.querySelector<HTMLSelectElement>("#trainingDemosSelect")!;
+const trainingBcEpochsLabel = document.querySelector<HTMLElement>("#trainingBcEpochsLabel")!;
+const trainingBcEpochs = document.querySelector<HTMLInputElement>("#trainingBcEpochs")!;
 const trainingSeed = document.querySelector<HTMLInputElement>("#trainingSeed")!;
 const trainingMessage = document.querySelector<HTMLParagraphElement>("#trainingMessage")!;
 const trainingStatus = document.querySelector<HTMLElement>("#trainingStatus")!;
@@ -986,8 +992,8 @@ type TrainingMetric = {
 };
 type TrainingRun = {
     id: string;
-    status: {status: string; iteration?: number; error?: string; latest_checkpoint?: string};
-    config: {name?: string; engine?: SimulationEngine; isaac_task?: IsaacTask; iterations?: number; trajectories?: number; horizon?: number; num_envs?: number; seed?: number};
+    status: {status: string; phase?: string; iteration?: number; error?: string; latest_checkpoint?: string; bc_epoch?: number; bc_epochs?: number; bc_loss?: number};
+    config: {name?: string; engine?: SimulationEngine; isaac_task?: IsaacTask; iterations?: number; trajectories?: number; horizon?: number; num_envs?: number; seed?: number; demo_ids?: string[]; bc_epochs?: number};
     metrics: TrainingMetric[];
     checkpoints: string[];
 };
@@ -1101,17 +1107,24 @@ function renderTrainingRun(run: TrainingRun | null): void {
     const state = run.status.status;
     const active = state === "starting" || state === "training";
     const paused = state === "paused";
+    const imitation = run.status.phase === "behavior_cloning";
     const latest = run.metrics.at(-1);
-    trainingStatus.textContent = state[0]?.toUpperCase() + state.slice(1);
-    trainingIteration.textContent = `${run.status.iteration ?? run.metrics.length} / ${run.config.iterations ?? "—"}`;
-    trainingReward.textContent = latest ? latest.reward_mean.toFixed(3) : "—";
-    trainingLoss.textContent = latest ? latest.vf_error_after.toFixed(4) : "—";
+    trainingStatus.textContent = imitation ? "Imitation" : state[0]?.toUpperCase() + state.slice(1);
+    trainingIteration.textContent = imitation
+        ? `${run.status.bc_epoch ?? 0} / ${run.status.bc_epochs ?? run.config.bc_epochs ?? "—"} BC`
+        : `${run.status.iteration ?? run.metrics.length} / ${run.config.iterations ?? "—"}`;
+    trainingReward.textContent = imitation ? "—" : latest ? latest.reward_mean.toFixed(3) : "—";
+    trainingLoss.textContent = imitation && run.status.bc_loss != null
+        ? run.status.bc_loss.toFixed(5)
+        : latest ? latest.vf_error_after.toFixed(4) : "—";
+    trainingLossLabel.textContent = imitation ? "BC loss" : selectedSimulationEngine === "isaaclab" ? "Value loss" : "VF error";
     trainingStopButton.disabled = !active && !paused;
     trainingStopButton.textContent = paused ? "Continue" : "Stop";
     trainingStopButton.dataset.action = paused ? "continue" : "pause";
     trainingCancelButton.disabled = !active && !paused;
     trainingStartButton.disabled = active || paused;
     trainingCheckpoints.textContent = run.checkpoints.length ? run.checkpoints.join(" · ") : "None yet";
+    if (imitation) trainingMessage.textContent = "Learning the selected demonstration actions first; PPO fine-tuning starts automatically afterwards.";
     if (run.status.error) trainingMessage.textContent = run.status.error;
     const plottedMetrics = sampleTrainingMetrics(run.metrics);
     const rewards = plottedMetrics.map((metric) => metric.reward_mean);
@@ -1408,6 +1421,7 @@ function setTrainingOpen(open: boolean): void {
     if (open) {
         void refreshTrainingRuns();
         void refreshCheckpoints();
+        void refreshDemos();
         if (trainingPollTimer === null) trainingPollTimer = window.setInterval(() => void refreshTrainingRuns(), 3000);
     } else if (trainingPollTimer !== null) {
         window.clearInterval(trainingPollTimer);
@@ -1431,6 +1445,8 @@ function updateTrainingUi(): void {
     trainingHorizonLabel.hidden = usesIsaac;
     trainingEnvironmentsLabel.hidden = !usesIsaac;
     trainingResumeLabel.hidden = !usesIsaac;
+    trainingDemosLabel.hidden = !usesIsaac;
+    trainingBcEpochsLabel.hidden = !usesIsaac;
     if (usesIsaac) trainingIterations.removeAttribute("max");
     else trainingIterations.max = "25";
     if (!usesIsaac && Number(trainingIterations.value) > 25) trainingIterations.value = "10";
@@ -1439,6 +1455,7 @@ function updateTrainingUi(): void {
     trainingMessage.textContent = usesIsaac
         ? "Ready for isolated GPU training with parallel environments."
         : "Ready to create an isolated training run.";
+    renderTrainingDemoOptions();
 }
 
 async function openIsaacDesktop(): Promise<void> {
@@ -1460,6 +1477,9 @@ async function startTraining(): Promise<void> {
         ? "Starting Isaac Lab headlessly; its first GPU startup can take a little while…"
         : "Starting an isolated DAPG process…";
     try {
+        const selectedDemoIds = selectedSimulationEngine === "isaaclab"
+            ? Array.from(trainingDemosSelect.selectedOptions, (option) => option.value)
+            : [];
         const run = await trainingRequest<TrainingRun>("/start", {
             method: "POST",
             body: JSON.stringify({
@@ -1472,6 +1492,8 @@ async function startTraining(): Promise<void> {
                 num_envs: Number(trainingEnvironments.value),
                 resume_checkpoint: selectedSimulationEngine === "isaaclab" ? trainingResumeSelect.value || null : null,
                 isaac_task: selectedIsaacTask,
+                demo_ids: selectedDemoIds,
+                bc_epochs: Number(trainingBcEpochs.value),
                 seed: Number(trainingSeed.value),
             }),
         });
@@ -1482,6 +1504,7 @@ async function startTraining(): Promise<void> {
             environments: selectedSimulationEngine === "isaaclab" ? Number(trainingEnvironments.value) : null,
             resumed: selectedSimulationEngine === "isaaclab" && Boolean(trainingResumeSelect.value),
             isaac_task: selectedSimulationEngine === "isaaclab" ? selectedIsaacTask : null,
+            demonstrations: selectedDemoIds.length,
         });
         trainingMessage.textContent = `Training ${run.id} started. You may close this panel; the backend continues.`;
         await refreshTrainingRuns(run.id);
@@ -2898,9 +2921,25 @@ async function refreshDemos(): Promise<void> {
         availableDemos = data.demos ?? [];
         if (!availableDemos.some((demo) => demo.id === selectedDemoId)) selectedDemoId = availableDemos[0]?.id ?? "";
         renderDemoLibrary();
+        renderTrainingDemoOptions();
     } catch (error) {
         demoMessage.textContent = `Could not load demonstrations: ${error instanceof Error ? error.message : String(error)}`;
     }
+}
+
+function renderTrainingDemoOptions(): void {
+    const selected = new Set(Array.from(trainingDemosSelect.selectedOptions, (option) => option.value));
+    const compatible = availableDemos.filter((demo) => demo.task === selectedIsaacTask);
+    trainingDemosSelect.replaceChildren(...compatible.map((demo) => {
+        const option = new Option(`${demo.name} · ${demo.steps} steps`, demo.id);
+        option.selected = selected.has(demo.id);
+        return option;
+    }));
+    trainingDemosSelect.disabled = compatible.length === 0;
+    trainingDemosSelect.title = compatible.length
+        ? "Selected demonstrations are imitated before PPO reinforcement learning starts."
+        : "No demonstrations recorded for the selected Isaac Lab task and user.";
+    trainingBcEpochs.disabled = trainingDemosSelect.selectedOptions.length === 0;
 }
 
 function demoApiPath(id: string): string {
@@ -3403,6 +3442,12 @@ demoPlayButton.addEventListener("click", () => {
 isaacDesktopButton.addEventListener("click", () => void openIsaacDesktop());
 trainingCloseButton.addEventListener("click", () => setTrainingOpen(false));
 trainingStartButton.addEventListener("click", () => void startTraining());
+trainingDemosSelect.addEventListener("change", () => {
+    trainingBcEpochs.disabled = trainingDemosSelect.selectedOptions.length === 0;
+    trainingMessage.textContent = trainingDemosSelect.selectedOptions.length
+        ? `${trainingDemosSelect.selectedOptions.length} demonstration(s) selected for imitation learning before PPO.`
+        : "No demonstrations selected; training will use PPO from scratch or the chosen checkpoint.";
+});
 trainingStopButton.addEventListener("click", () => void stopTraining());
 trainingCancelButton.addEventListener("click", () => void cancelTraining());
 trainingRunSelect.addEventListener("change", () => {
