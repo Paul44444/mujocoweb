@@ -174,6 +174,12 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <div class="demo-keymap"><kbd>W</kbd><kbd>S</kbd> / <kbd>→</kbd><kbd>←</kbd> X &nbsp; <kbd>A</kbd><kbd>D</kbd> / <kbd>↑</kbd><kbd>↓</kbd> Y &nbsp; <kbd>Q</kbd><kbd>E</kbd> / <kbd>PageDown</kbd><kbd>PageUp</kbd> Z &nbsp; <kbd>O</kbd> Open &nbsp; <kbd>I</kbd> Close</div>
           <div class="demo-library"><button id="demoLibraryToggle" class="demo-library-toggle" type="button" aria-expanded="false"><span id="demoLibraryLabel">Saved demonstrations</span><span id="demoLibraryChevron" aria-hidden="true">▾</span></button><button id="demoPlayButton" class="secondary-button" type="button" disabled>Play selected demo</button></div>
           <div id="demoLibraryPanel" class="demo-library-panel" hidden><p>No saved demonstrations yet.</p></div>
+          <div id="policyEvaluationControls" class="policy-evaluation-controls">
+            <label class="policy-evaluation-toggle"><input id="policyEvaluationEnabled" type="checkbox" /> Test loaded policy from selected demo start</label>
+            <label for="policyEvaluationVariation">Test-tube position variation <strong id="policyEvaluationVariationValue">±0.0 cm</strong></label>
+            <input id="policyEvaluationVariation" type="range" min="0" max="10" step="0.5" value="0" disabled />
+            <small>0 cm reproduces the recorded start. Increase the range to test robustness around it.</small>
+          </div>
           <p id="demoMessage" class="generator-message" aria-live="polite">Isaac Lab only. Click Start recording, then keep the movement keys pressed.</p>
         </section>
 
@@ -693,9 +699,9 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <article><span id="trainingLossLabel">VF error</span><strong id="trainingLoss">—</strong></article>
     </div>
     <section class="training-chart-card">
-      <div><strong>Learning progress</strong><span>Reward and value-function error</span></div>
+      <div><strong>Learning progress</strong><span>Reward, value-function error, and imitation loss</span></div>
       <svg id="trainingChart" viewBox="0 0 640 220" role="img" aria-label="Training reward and loss chart"></svg>
-      <div class="training-chart-legend"><span class="reward">Mean reward</span><span class="loss">VF error after</span></div>
+      <div class="training-chart-legend"><span class="reward">Mean reward</span><span class="loss">VF error after</span><span class="bc-loss">BC loss (log scale)</span></div>
     </section>
     <div class="training-checkpoints"><strong>New checkpoints</strong><span id="trainingCheckpoints">None yet</span></div>
   </aside>
@@ -713,6 +719,9 @@ const demoRecordButton = document.querySelector<HTMLButtonElement>("#demoRecordB
 const demoStopButton = document.querySelector<HTMLButtonElement>("#demoStopButton")!;
 const demoLibraryToggle = document.querySelector<HTMLButtonElement>("#demoLibraryToggle")!;
 const demoLibraryLabel = document.querySelector<HTMLElement>("#demoLibraryLabel")!;
+const policyEvaluationEnabled = document.querySelector<HTMLInputElement>("#policyEvaluationEnabled")!;
+const policyEvaluationVariation = document.querySelector<HTMLInputElement>("#policyEvaluationVariation")!;
+const policyEvaluationVariationValue = document.querySelector<HTMLElement>("#policyEvaluationVariationValue")!;
 const demoLibraryChevron = document.querySelector<HTMLElement>("#demoLibraryChevron")!;
 const demoLibraryPanel = document.querySelector<HTMLElement>("#demoLibraryPanel")!;
 const demoPlayButton = document.querySelector<HTMLButtonElement>("#demoPlayButton")!;
@@ -992,11 +1001,13 @@ type TrainingMetric = {
     kl_distance: number; surrogate_improvement: number; vf_error_before: number; vf_error_after: number;
     success_rate: number; samples: number; seconds: number;
 };
+type BehaviorCloningMetric = {epoch: number; loss: number};
 type TrainingRun = {
     id: string;
     status: {status: string; phase?: string; iteration?: number; error?: string; latest_checkpoint?: string; bc_epoch?: number; bc_epochs?: number; bc_loss?: number};
     config: {name?: string; engine?: SimulationEngine; isaac_task?: IsaacTask; iterations?: number; trajectories?: number; horizon?: number; num_envs?: number; seed?: number; demo_ids?: string[]; bc_epochs?: number};
     metrics: TrainingMetric[];
+    bc_metrics?: BehaviorCloningMetric[];
     checkpoints: string[];
 };
 type IsaacCheckpoint = {id: string; run_id: string; name: string; label: string; modified_at: number; deletable: boolean; isaac_task?: IsaacTask};
@@ -1132,14 +1143,18 @@ function renderTrainingRun(run: TrainingRun | null): void {
     if (imitation) trainingMessage.textContent = "Learning the selected demonstration actions first; PPO fine-tuning starts automatically afterwards.";
     if (run.status.error) trainingMessage.textContent = run.status.error;
     const plottedMetrics = sampleTrainingMetrics(run.metrics);
+    const plottedBcMetrics = run.bc_metrics ?? [];
     const rewards = plottedMetrics.map((metric) => metric.reward_mean);
     const losses = plottedMetrics.map((metric) => metric.vf_error_after);
     const rewardRange = chartRange(rewards);
     const lossRange = chartRange(losses);
+    const bcLogValues = plottedBcMetrics.map((metric) => Math.log10(Math.max(metric.loss, 1e-12)));
+    const bcLogRange = chartRange(bcLogValues);
     const plot = {left: 72, top: 22, width: 486, height: 164};
     trainingChartState = plottedMetrics.length ? {metrics: plottedMetrics, rewardRange, lossRange, ...plot} : null;
     const rewardPoints = chartPoints(rewards, rewardRange, plot.left, plot.top, plot.width, plot.height).split(" ").filter(Boolean);
     const lossPoints = chartPoints(losses, lossRange, plot.left, plot.top, plot.width, plot.height).split(" ").filter(Boolean);
+    const bcPoints = chartPoints(bcLogValues, bcLogRange, plot.left, plot.top, plot.width, plot.height).split(" ").filter(Boolean);
     const firstIteration = plottedMetrics[0]?.iteration ?? 0;
     const lastIteration = plottedMetrics.at(-1)?.iteration ?? 0;
     trainingChart.innerHTML = `
@@ -1153,8 +1168,11 @@ function renderTrainingRun(run: TrainingRun | null): void {
       ${chartMarkers(rewardPoints, 4, "#a3e635")}
       <polyline points="${lossPoints.join(" ")}" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       ${chartMarkers(lossPoints, 3, "#60a5fa")}
+      <polyline points="${bcPoints.join(" ")}" fill="none" stroke="#c084fc" stroke-width="2.5" stroke-dasharray="5 4" stroke-linecap="round" stroke-linejoin="round"/>
+      ${chartMarkers(bcPoints, 3, "#c084fc")}
       <text x="72" y="210" fill="#71717a" font-size="12">Iteration ${firstIteration}</text>
       <text x="558" y="210" text-anchor="end" fill="#71717a" font-size="12">${lastIteration}</text>
+      ${plottedBcMetrics.length ? `<text x="315" y="16" text-anchor="middle" fill="#c084fc" font-size="10">BC epoch ${plottedBcMetrics[0].epoch} → ${plottedBcMetrics.at(-1)!.epoch} · ${formatChartValue(plottedBcMetrics.at(-1)!.loss)}</text>` : ""}
       <g id="trainingChartHover" visibility="hidden" pointer-events="none">
         <line id="trainingChartHoverLine" y1="22" y2="186" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/>
         <circle id="trainingChartRewardPoint" r="5" fill="#a3e635" stroke="#09090b" stroke-width="2"/>
@@ -3109,11 +3127,32 @@ function isaacScenePayload(): SceneAsset[] {
 
 function togglePause(): void {
     const nextPaused = !isPaused;
+    if (!nextPaused) applyPolicyEvaluationStart();
     if (!sendSimulationCommand({type: "set_paused", paused: nextPaused})) return;
     pendingPauseState = nextPaused;
     isPaused = nextPaused;
     updatePlaybackButton();
     setStatus(isPaused ? "Simulation stopped" : "Simulation running", "connected");
+}
+
+function applyPolicyEvaluationStart(): boolean {
+    if (!policyEvaluationEnabled.checked || selectedSimulationEngine !== "isaaclab") return false;
+    if (!selectedDemoId) {
+        demoMessage.textContent = "Select a saved demonstration before enabling policy evaluation.";
+        return false;
+    }
+    const variationCm = Number(policyEvaluationVariation.value);
+    const sent = sendSimulationCommand({
+        type: "policy_evaluate",
+        id: selectedDemoId,
+        position_variation: variationCm / 100,
+    });
+    if (sent) {
+        demoMessage.textContent = variationCm === 0
+            ? "Policy test started from the demonstration's exact initial state."
+            : `Policy test started with test-tube position randomized by up to ±${variationCm.toFixed(1)} cm.`;
+    }
+    return sent;
 }
 
 function updatePlaybackButton(): void {
@@ -3299,6 +3338,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         });
         if (selectedSimulationEngine === "isaaclab") {
             sendSimulationCommand({type: "scene_replace", assets: isaacScenePayload()});
+            applyPolicyEvaluationStart();
         }
     };
 
@@ -3464,6 +3504,15 @@ demoPlayButton.addEventListener("click", () => {
     if (!selectedDemoId || !sendSimulationCommand({type: "demo_play", id: selectedDemoId})) return;
     demoPlaybackActive = true;
     demoMessage.textContent = "Playing saved demonstration from its initial state…";
+});
+policyEvaluationEnabled.addEventListener("change", () => {
+    policyEvaluationVariation.disabled = !policyEvaluationEnabled.checked;
+    if (policyEvaluationEnabled.checked && !selectedDemoId) {
+        demoMessage.textContent = "Select a saved demonstration to use its initial robot and object state.";
+    }
+});
+policyEvaluationVariation.addEventListener("input", () => {
+    policyEvaluationVariationValue.textContent = `±${Number(policyEvaluationVariation.value).toFixed(1)} cm`;
 });
 isaacDesktopButton.addEventListener("click", () => void openIsaacDesktop());
 trainingCloseButton.addEventListener("click", () => setTrainingOpen(false));

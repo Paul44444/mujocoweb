@@ -457,6 +457,12 @@ h1 {
 .training-chart-legend { display: flex; gap: 18px; color: #a1a1aa; font-size: 0.75rem; }
 .training-chart-legend span::before { content: ""; display: inline-block; width: 18px; height: 3px; margin-right: 6px; vertical-align: middle; border-radius: 2px; background: #a3e635; }
 .training-chart-legend .loss::before { background: #60a5fa; }
+.training-chart-legend .bc-loss::before { background: #c084fc; }
+.policy-evaluation-controls { display: grid; grid-template-columns: minmax(230px, auto) minmax(190px, 1fr); align-items: center; gap: 7px 14px; padding: 10px 12px; border: 1px solid rgba(192, 132, 252, 0.28); border-radius: 9px; background: rgba(192, 132, 252, 0.055); }
+.policy-evaluation-controls label { color: #d4d4d8; font-size: 0.78rem; }
+.policy-evaluation-toggle { display: flex; align-items: center; gap: 7px; }
+.policy-evaluation-controls input[type="range"] { width: 100%; accent-color: #c084fc; }
+.policy-evaluation-controls small { grid-column: 1 / -1; color: #8f8f99; }
 .training-checkpoints { display: grid; gap: 5px; margin-top: 12px; color: #a1a1aa; font-size: 0.78rem; }
 .training-checkpoints span { overflow-wrap: anywhere; color: #d4d4d8; }
 
