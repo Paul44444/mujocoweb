@@ -459,6 +459,8 @@ h1 {
 .training-chart-legend .loss::before { background: #60a5fa; }
 .training-chart-legend .bc-loss::before { background: #c084fc; }
 .policy-evaluation-controls { display: grid; grid-template-columns: minmax(220px, 1.3fr) minmax(190px, 1fr) auto minmax(130px, .8fr) auto; align-items: center; gap: 8px 12px; padding: 9px 16px; border-top: 1px solid rgba(192, 132, 252, 0.28); border-bottom: 1px solid rgba(192, 132, 252, 0.2); background: rgba(192, 132, 252, 0.055); }
+.policy-evaluation-controls.active { border-color: rgba(163, 230, 53, .5); background: rgba(163, 230, 53, .07); }
+.policy-evaluation-controls button[aria-pressed="true"] { border-color: #84cc16; color: #d9f99d; background: rgba(101, 163, 13, .18); }
 .policy-evaluation-controls[hidden] { display: none; }
 .policy-evaluation-controls label { display: grid; gap: 3px; color: #a1a1aa; font-size: 0.7rem; text-transform: uppercase; letter-spacing: .04em; }
 .policy-evaluation-controls select { min-width: 0; padding: 7px 9px; border: 1px solid #3f3f46; border-radius: 7px; color: #f4f4f5; background: #09090b; }

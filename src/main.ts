@@ -164,7 +164,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <label>Demonstration<select id="policyEvaluationDemoSelect" aria-label="Demonstration start state"><option value="">No demonstration available</option></select></label>
           <label for="policyEvaluationVariation">Test-tube variation <strong id="policyEvaluationVariationValue">±0.0 cm</strong></label>
           <input id="policyEvaluationVariation" type="range" min="0" max="10" step="0.5" value="0" />
-          <button id="policyEvaluationLoadButton" class="secondary-button" type="button" disabled>Load demo start</button>
+          <button id="policyEvaluationLoadButton" class="secondary-button" type="button" aria-pressed="false" disabled>Activate demo</button>
         </section>
 
         <div id="sceneAccountPanel" class="scene-account-panel" hidden>
@@ -3011,6 +3011,12 @@ function renderPolicyEvaluationOptions(): void {
         : compatible[0]?.id ?? "";
     if (policyEvaluationDemoSelect.value) selectedDemoId = policyEvaluationDemoSelect.value;
     policyEvaluationLoadButton.disabled = !policyEvaluationDemoSelect.value || !activePolicyCheckpoint;
+    if (policyEvaluationLoadButton.disabled && policyEvaluationActive) {
+        policyEvaluationActive = false;
+        policyEvaluationLoadButton.setAttribute("aria-pressed", "false");
+        policyEvaluationLoadButton.textContent = "Activate demo";
+        policyEvaluationControls.classList.remove("active");
+    }
     policyEvaluationLoadButton.title = !activePolicyCheckpoint
         ? "Load a trained policy first"
         : "Restore this demonstration start and pause before evaluation";
@@ -3195,6 +3201,9 @@ function isaacScenePayload(): SceneAsset[] {
 
 function togglePause(): void {
     const nextPaused = !isPaused;
+    if (!nextPaused && policyEvaluationActive) {
+        restoreActivePolicyEvaluation(false);
+    }
     if (!sendSimulationCommand({type: "set_paused", paused: nextPaused})) return;
     pendingPauseState = nextPaused;
     isPaused = nextPaused;
@@ -3202,7 +3211,7 @@ function togglePause(): void {
     setStatus(isPaused ? "Simulation stopped" : "Simulation running", "connected");
 }
 
-function loadPolicyEvaluationStart(): boolean {
+function restoreActivePolicyEvaluation(pauseAfterLoad: boolean): boolean {
     const demoId = policyEvaluationDemoSelect.value;
     if (!demoId || selectedSimulationEngine !== "isaaclab") {
         setStatus("Select a compatible demonstration first", "error");
@@ -3213,18 +3222,24 @@ function loadPolicyEvaluationStart(): boolean {
         type: "policy_evaluate",
         id: demoId,
         position_variation: variationCm / 100,
-        pause_after_load: true,
+        pause_after_load: pauseAfterLoad,
     });
     if (sent) {
-        policyEvaluationActive = true;
-        isPaused = true;
-        pendingPauseState = true;
-        updatePlaybackButton();
         setStatus(variationCm === 0
-            ? "Demo start loaded exactly — press Start simulation to evaluate"
-            : `Demo start loaded with up to ±${variationCm.toFixed(1)} cm variation — press Start simulation`, "connected");
+            ? "Starting from the exact demonstration state"
+            : `Starting from the demonstration with up to ±${variationCm.toFixed(1)} cm variation`, "connected");
     }
     return sent;
+}
+
+function setPolicyEvaluationActive(active: boolean): void {
+    policyEvaluationActive = active;
+    policyEvaluationLoadButton.setAttribute("aria-pressed", String(active));
+    policyEvaluationLoadButton.textContent = active ? "Demo active" : "Activate demo";
+    policyEvaluationControls.classList.toggle("active", active);
+    setStatus(active
+        ? "Demo start enabled — Start and Reset will use this recorded state"
+        : "Demo start disabled — Start and Reset use the normal randomized environment", "connected");
 }
 
 function updatePlaybackButton(): void {
@@ -3410,6 +3425,9 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         });
         if (selectedSimulationEngine === "isaaclab") {
             sendSimulationCommand({type: "scene_replace", assets: isaacScenePayload()});
+            if (policyEvaluationActive && restoreActivePolicyEvaluation(false)) {
+                sendSimulationCommand({type: "set_paused", paused: false});
+            }
         }
     };
 
@@ -3562,18 +3580,13 @@ function displayFrame(frameBlob: Blob): void {
 startButton.addEventListener("click", handlePlaybackButton);
 episodeResetButton.addEventListener("click", () => {
     const evaluationReset = policyEvaluationActive && Boolean(policyEvaluationDemoSelect.value) && Boolean(activePolicyCheckpoint);
-    // Always retain Isaac's ordinary reset as the reliable baseline. In
-    // evaluation mode the recorded initial state is restored immediately
-    // afterwards, replacing the environment's randomized object pose.
-    if (!sendSimulationCommand({type: "reset_episode"})) return;
     if (evaluationReset) {
-        sendSimulationCommand({
-            type: "policy_evaluate",
-            id: policyEvaluationDemoSelect.value,
-            position_variation: Number(policyEvaluationVariation.value) / 100,
-            pause_after_load: isPaused,
-        });
-    }
+        if (!restoreActivePolicyEvaluation(isPaused)) return;
+        // Older already-running workers pause after restoring. Explicitly
+        // resume when the simulation was running, without an intermediate
+        // randomized reset frame.
+        if (!isPaused) sendSimulationCommand({type: "set_paused", paused: false});
+    } else if (!sendSimulationCommand({type: "reset_episode"})) return;
     setStatus(evaluationReset ? "Restoring policy-test start…" : "Resetting robot and task object…", "connecting");
     window.setTimeout(() => setStatus(isPaused ? "Simulation reset and stopped" : "Simulation running", "connected"), 400);
 });
@@ -3595,7 +3608,7 @@ policyEvaluationDemoSelect.addEventListener("change", () => {
 policyEvaluationVariation.addEventListener("input", () => {
     policyEvaluationVariationValue.textContent = `±${Number(policyEvaluationVariation.value).toFixed(1)} cm`;
 });
-policyEvaluationLoadButton.addEventListener("click", () => loadPolicyEvaluationStart());
+policyEvaluationLoadButton.addEventListener("click", () => setPolicyEvaluationActive(!policyEvaluationActive));
 isaacDesktopButton.addEventListener("click", () => void openIsaacDesktop());
 trainingCloseButton.addEventListener("click", () => setTrainingOpen(false));
 trainingStartButton.addEventListener("click", () => void startTraining());
