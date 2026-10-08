@@ -155,6 +155,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               <span class="playback-icon play-icon" aria-hidden="true"></span>
               <span class="playback-label">Start simulation</span>
             </button>
+            <button id="episodeResetButton" class="setup-button" type="button" disabled title="Reset robot and task object while keeping the camera">↻ Reset</button>
           </div>
         </div>
 
@@ -702,6 +703,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
 const startButton =
     document.querySelector<HTMLButtonElement>("#startButton")!;
+const episodeResetButton = document.querySelector<HTMLButtonElement>("#episodeResetButton")!;
 const sceneEditButton = document.querySelector<HTMLButtonElement>("#sceneEditButton")!;
 const trainingButton = document.querySelector<HTMLButtonElement>("#trainingButton")!;
 const demoModeButton = document.querySelector<HTMLButtonElement>("#demoModeButton")!;
@@ -2632,6 +2634,7 @@ function resetSimulationForConfiguration(): void {
     timeValue.textContent = "—";
     resetCameraButton.disabled = true;
     startButton.disabled = false;
+    episodeResetButton.disabled = true;
     updatePlaybackButton();
     setStatus("Ready to start with the new configuration", "idle");
 }
@@ -2679,6 +2682,8 @@ function updateEngineUi(): void {
     isaacDesktopButton.disabled = usesMujoco;
     trainingButton.title = usesMujoco ? "Open DAPG training" : "Open parallel Isaac Lab training";
     checkpointToolbar.hidden = usesMujoco;
+    episodeResetButton.hidden = usesMujoco;
+    episodeResetButton.disabled = usesMujoco || !socket || socket.readyState !== WebSocket.OPEN || demoRecording;
     isaacTaskSelect.hidden = usesMujoco;
     visionSensorPanel.hidden = usesMujoco || selectedIsaacTask !== "vision";
     selectedTrainingRun = "";
@@ -3055,6 +3060,7 @@ function startDemoRecording(): void {
         return;
     }
     demoRecording = true;
+    episodeResetButton.disabled = true;
     demoRecordButton.disabled = true;
     demoStopButton.disabled = false;
     demoMessage.textContent = "Recording without a time limit · WASD + Q/E move; O opens and I closes the gripper.";
@@ -3066,6 +3072,7 @@ function stopDemoRecording(): void {
     sendSimulationCommand({type: "demo_control", movement: [0, 0, 0], gripper: 0, user: sceneUserInput.value || "Guest", name: demoNameInput.value || "Demo"});
     sendSimulationCommand({type: "demo_stop", user: sceneUserInput.value || "Guest", name: demoNameInput.value || "Demo"});
     demoRecording = false;
+    episodeResetButton.disabled = !socket || socket.readyState !== WebSocket.OPEN;
     demoRecordButton.disabled = false;
     demoStopButton.disabled = true;
     demoMessage.textContent = "Demonstration saved. Refreshing library…";
@@ -3282,6 +3289,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         startButton.disabled = false;
         updatePlaybackButton();
         resetCameraButton.disabled = false;
+        episodeResetButton.disabled = selectedSimulationEngine !== "isaaclab" || demoRecording;
         captureEvent(editorPreview ? "scene_editor_opened" : "simulation_started", {
             engine: selectedSimulationEngine,
             task: selectedTaskId,
@@ -3314,6 +3322,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         pendingPauseState = null;
         updatePlaybackButton();
         resetCameraButton.disabled = true;
+        episodeResetButton.disabled = true;
         startButton.disabled = false;
 
         if (!connectionOpened && !fallbackAttempt && backendUrl !== RENDER_BACKEND_URL) {
@@ -3429,6 +3438,11 @@ function displayFrame(frameBlob: Blob): void {
 }
 
 startButton.addEventListener("click", handlePlaybackButton);
+episodeResetButton.addEventListener("click", () => {
+    if (!sendSimulationCommand({type: "reset_episode"})) return;
+    setStatus("Resetting robot and task object…", "connecting");
+    window.setTimeout(() => setStatus(isPaused ? "Simulation reset and stopped" : "Simulation running", "connected"), 400);
+});
 sceneEditButton.addEventListener("click", returnToSceneEditor);
 trainingButton.addEventListener("click", () => setTrainingOpen(trainingPanel.hasAttribute("hidden")));
 demoModeButton.addEventListener("click", () => setDemoPanelOpen(demoPanel.hasAttribute("hidden")));
