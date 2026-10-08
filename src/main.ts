@@ -1021,7 +1021,7 @@ let generatedObject: GeneratedObject | null = null;
 let selectedTrainingRun = "";
 let trainingPollTimer: number | null = null;
 type ChartRange = {minimum: number; maximum: number};
-type TrainingChartState = {metrics: TrainingMetric[]; rewardRange: ChartRange; lossRange: ChartRange; left: number; top: number; width: number; height: number};
+type TrainingChartState = {metrics: TrainingMetric[]; bcMetrics: BehaviorCloningMetric[]; bcLogRange: ChartRange; bcEpochs: number; rewardRange: ChartRange; lossRange: ChartRange; left: number; top: number; width: number; height: number};
 let trainingChartState: TrainingChartState | null = null;
 let activePolicyCheckpoint: string | null = null;
 let availablePolicyCheckpoints: IsaacCheckpoint[] = [];
@@ -1157,7 +1157,8 @@ function renderTrainingRun(run: TrainingRun | null): void {
     const bcLogValues = plottedBcMetrics.map((metric) => Math.log10(Math.max(metric.loss, 1e-12)));
     const bcLogRange = chartRange(bcLogValues);
     const plot = {left: 72, top: 22, width: 486, height: 164};
-    trainingChartState = plottedMetrics.length ? {metrics: plottedMetrics, rewardRange, lossRange, ...plot} : null;
+    trainingChartState = plottedMetrics.length || plottedBcMetrics.length
+        ? {metrics: plottedMetrics, bcMetrics: plottedBcMetrics, bcLogRange, bcEpochs: run.config.bc_epochs ?? plottedBcMetrics.at(-1)?.epoch ?? 0, rewardRange, lossRange, ...plot} : null;
     const rewardPoints = chartPoints(rewards, rewardRange, plot.left, plot.top, plot.width, plot.height).split(" ").filter(Boolean);
     const lossPoints = chartPoints(losses, lossRange, plot.left, plot.top, plot.width, plot.height).split(" ").filter(Boolean);
     const bcPoints = chartPoints(bcLogValues, bcLogRange, plot.left, plot.top, plot.width, plot.height).split(" ").filter(Boolean);
@@ -1183,18 +1184,47 @@ function renderTrainingRun(run: TrainingRun | null): void {
         <line id="trainingChartHoverLine" y1="22" y2="186" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/>
         <circle id="trainingChartRewardPoint" r="5" fill="#a3e635" stroke="#09090b" stroke-width="2"/>
         <circle id="trainingChartLossPoint" r="4" fill="#60a5fa" stroke="#09090b" stroke-width="2"/>
+        <circle id="trainingChartBcPoint" r="5" fill="#c084fc" stroke="#09090b" stroke-width="2" visibility="hidden"/>
         <g id="trainingChartTooltip"><rect width="166" height="48" rx="6" fill="#18181b" stroke="#52525b"/><text id="trainingChartTooltipIteration" x="9" y="16" fill="#d4d4d8" font-size="11"></text><text id="trainingChartTooltipValues" x="9" y="35" fill="#f4f4f5" font-size="11"></text></g>
       </g>`;
 }
 
 trainingChart.addEventListener("pointermove", (event) => {
     const state = trainingChartState;
-    if (!state?.metrics.length) return;
+    if (!state) return;
     const bounds = trainingChart.getBoundingClientRect();
     const svgX = (event.clientX - bounds.left) * 640 / bounds.width;
     const relative = Math.max(0, Math.min(1, (svgX - state.left) / state.width));
+    const svgY = (event.clientY - bounds.top) * 220 / bounds.height;
+    const bcIndex = Math.round(relative * (state.bcMetrics.length - 1));
+    const bcMetric = state.bcMetrics[bcIndex];
+    const bcY = bcMetric ? chartY(Math.log10(Math.max(bcMetric.loss, 1e-12)), state.bcLogRange, state.top, state.height) : Infinity;
     const index = Math.round(relative * (state.metrics.length - 1));
     const metric = state.metrics[index];
+    const useBc = Boolean(bcMetric) && (!metric || Math.abs(svgY - bcY) < Math.min(
+        Math.abs(svgY - chartY(metric.reward_mean, state.rewardRange, state.top, state.height)),
+        Math.abs(svgY - chartY(metric.vf_error_after, state.lossRange, state.top, state.height)),
+    ));
+    const bcPoint = trainingChart.querySelector<SVGCircleElement>("#trainingChartBcPoint");
+    if (useBc && bcPoint) {
+        const x = state.left + (state.bcMetrics.length === 1 ? state.width / 2 : bcIndex * state.width / (state.bcMetrics.length - 1));
+        const hover = trainingChart.querySelector<SVGGElement>("#trainingChartHover")!;
+        const line = trainingChart.querySelector<SVGLineElement>("#trainingChartHoverLine")!;
+        line.setAttribute("x1", String(x)); line.setAttribute("x2", String(x));
+        bcPoint.setAttribute("cx", String(x)); bcPoint.setAttribute("cy", String(bcY));
+        bcPoint.setAttribute("visibility", "visible");
+        trainingChart.querySelector("#trainingChartRewardPoint")?.setAttribute("visibility", "hidden");
+        trainingChart.querySelector("#trainingChartLossPoint")?.setAttribute("visibility", "hidden");
+        trainingChart.querySelector("#trainingChartTooltip")!.setAttribute("transform", `translate(${x > 390 ? x - 174 : x + 8} ${Math.max(24, Math.min(136, bcY - 24))})`);
+        trainingChart.querySelector("#trainingChartTooltipIteration")!.textContent = `BC epoch ${bcMetric.epoch} / ${state.bcEpochs}`;
+        trainingChart.querySelector("#trainingChartTooltipValues")!.textContent = `BC loss ${bcMetric.loss.toPrecision(6)}`;
+        hover.setAttribute("visibility", "visible");
+        return;
+    }
+    if (!metric) return;
+    bcPoint?.setAttribute("visibility", "hidden");
+    trainingChart.querySelector("#trainingChartRewardPoint")?.setAttribute("visibility", "visible");
+    trainingChart.querySelector("#trainingChartLossPoint")?.setAttribute("visibility", "visible");
     const x = state.left + (state.metrics.length === 1 ? state.width / 2 : index * state.width / (state.metrics.length - 1));
     const rewardY = chartY(metric.reward_mean, state.rewardRange, state.top, state.height);
     const lossY = chartY(metric.vf_error_after, state.lossRange, state.top, state.height);
