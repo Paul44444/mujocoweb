@@ -121,6 +121,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               <option value="labware_lift">Stage 1 · Lift Test Tube</option>
               <option value="graspgen">GraspGenX · Pretrained Tube Pick</option>
               <option value="labware">Stage 2 · Place in Rack</option>
+              <option value="rack_insert">New · Upright Tube → Rack Hole</option>
             </select>
             <button id="sceneAccountButton" class="setup-button" type="button" aria-controls="sceneAccountPanel" aria-expanded="false">
               <span aria-hidden="true">◎</span><span id="sceneAccountLabel">User: Guest</span>
@@ -932,11 +933,12 @@ let pinchDistance: number | null = null;
 let cameraGestureMoved = false;
 let suppressSimulationClick = false;
 type SimulationEngine = "isaaclab" | "mujoco";
-type IsaacTask = "state" | "vision" | "labware_lift" | "labware" | "graspgen";
+type IsaacTask = "state" | "vision" | "labware_lift" | "labware" | "graspgen" | "rack_insert";
 let selectedSimulationEngine: SimulationEngine = "isaaclab";
 let selectedIsaacTask: IsaacTask = "state";
 
 function isaacTaskName(task: IsaacTask): string {
+    if (task === "rack_insert") return "Upright Tube → Rack Hole";
     if (task === "vision") return "Vision-based Cube Lift";
     if (task === "labware_lift") return "Test Tube Lift";
     if (task === "graspgen") return "GraspGenX · Pretrained Tube Pick";
@@ -1525,7 +1527,9 @@ function updateTrainingUi(): void {
     const usesIsaac = selectedSimulationEngine === "isaaclab";
     trainingEngineLabel.textContent = usesIsaac ? "NVIDIA Isaac Lab · RSL-RL PPO" : "MuJoCo · DAPG";
     trainingSafety.textContent = usesIsaac
-        ? selectedIsaacTask === "graspgen"
+        ? selectedIsaacTask === "rack_insert"
+            ? "New trainable task: grasp an upright tube, align with a real rack hole, insert and release. Exact static rack collider. No pretrained insertion policy yet; record demos or train a separate policy."
+        : selectedIsaacTask === "graspgen"
             ? "Pretrained NVIDIA GraspGenX grasp predictions + Isaac Lula IK. Playback only; select Stage 1 Lift Test Tube for PPO/BC training. This is not GEN-1.5 or an end-to-end learned arm policy."
         : selectedIsaacTask === "vision"
             ? "Trains the separate Franka Vision task with a noisy pose-estimator proxy. Playback triangulates XYZ from real stereo camera pixels; existing State policies remain compatible."
@@ -2680,7 +2684,9 @@ function applyConfiguration(): void {
     policyFileDisplay.textContent = policyFile;
     const task = taskCatalog[selectedTaskId];
     configurationSummary.textContent = selectedSimulationEngine === "isaaclab"
-        ? selectedIsaacTask === "graspgen"
+        ? selectedIsaacTask === "rack_insert"
+            ? "NVIDIA Isaac Lab · Upright tube rack insertion · Exact mesh collider"
+        : selectedIsaacTask === "graspgen"
             ? "NVIDIA GraspGenX · Pretrained tube grasp + Lula IK · Physical contacts"
         : selectedIsaacTask === "vision"
             ? "NVIDIA Isaac Lab · Franka Cube Lift Vision · Stereo RGB pose estimate"
@@ -2694,7 +2700,9 @@ function applyConfiguration(): void {
         configurationSummary.textContent = `${task.name} · ${generatedObject.name}`;
     }
     interactionHint.textContent = selectedSimulationEngine === "isaaclab"
-        ? selectedIsaacTask === "graspgen"
+        ? selectedIsaacTask === "rack_insert"
+            ? "New insertion task · upright tube + real rack holes · record a demo or train a new policy"
+        : selectedIsaacTask === "graspgen"
             ? "Pretrained grasp + IK · picks a horizontal tube from its supports · Reset to repeat"
         : selectedIsaacTask === "vision"
             ? "Vision task · cube XYZ is triangulated from two RGB cameras, never read directly by the actor"
@@ -2759,7 +2767,7 @@ async function syncIsaacTaskSelection(): Promise<void> {
     if (selectedSimulationEngine !== "isaaclab" || isaacTaskSelect.disabled) return;
     try {
         const result = await trainingRequest<{task?: IsaacTask}>("/isaac-task");
-        const backendTask: IsaacTask = result.task === "vision" || result.task === "labware_lift" || result.task === "labware" || result.task === "graspgen" ? result.task : "state";
+        const backendTask: IsaacTask = result.task === "vision" || result.task === "labware_lift" || result.task === "labware" || result.task === "graspgen" || result.task === "rack_insert" ? result.task : "state";
         if (backendTask === selectedIsaacTask) return;
         selectedIsaacTask = backendTask;
         isaacTaskSelect.value = backendTask;
@@ -2813,7 +2821,7 @@ try {
     if (storedConfiguration) {
         const parsed = JSON.parse(storedConfiguration) as Partial<typeof defaultConfiguration> & {generatedObject?: GeneratedObject};
         selectedSimulationEngine = parsed.engine === "mujoco" ? "mujoco" : "isaaclab";
-        selectedIsaacTask = parsed.isaacTask === "vision" || parsed.isaacTask === "labware_lift" || parsed.isaacTask === "labware" || parsed.isaacTask === "graspgen" ? parsed.isaacTask : "state";
+        selectedIsaacTask = parsed.isaacTask === "vision" || parsed.isaacTask === "labware_lift" || parsed.isaacTask === "labware" || parsed.isaacTask === "graspgen" || parsed.isaacTask === "rack_insert" ? parsed.isaacTask : "state";
         activateEngineScene(selectedSimulationEngine);
         const storedTask = parsed.taskId && parsed.taskId in taskCatalog
             ? parsed.taskId as TaskId
@@ -3254,7 +3262,7 @@ function stopDemoRecording(): void {
 
 function isaacScenePayload(): SceneAsset[] {
     const supported = new Set(["box", "sphere", "cylinder", "kuka_allegro"]);
-    const hideDefaultCube = selectedIsaacTask === "labware_lift" || selectedIsaacTask === "labware" || selectedIsaacTask === "graspgen";
+    const hideDefaultCube = selectedIsaacTask === "labware_lift" || selectedIsaacTask === "labware" || selectedIsaacTask === "graspgen" || selectedIsaacTask === "rack_insert";
     return sceneAssets
         .filter((asset) => supported.has(asset.asset) && !(hideDefaultCube && asset.id === "training-cube"))
         .map((asset) => {
@@ -3916,7 +3924,7 @@ simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 isaacTaskSelect.addEventListener("change", () => {
     const value = isaacTaskSelect.value;
-    const task: IsaacTask = value === "vision" || value === "labware_lift" || value === "labware" || value === "graspgen"
+    const task: IsaacTask = value === "vision" || value === "labware_lift" || value === "labware" || value === "graspgen" || value === "rack_insert"
         ? value
         : "state";
     if (task !== selectedIsaacTask) void selectIsaacTask(task);
