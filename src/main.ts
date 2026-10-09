@@ -160,6 +160,12 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           </div>
         </div>
 
+        <section id="graspVariationControls" class="policy-evaluation-controls" hidden>
+          <div class="policy-evaluation-copy"><strong>GraspGenX start variation</strong><span>Reset samples a new XY position and yaw. Tube and supports move together; no retraining needed. Success is not guaranteed.</span></div>
+          <label>XY range <strong id="graspVariationPositionValue">±0.0 cm</strong><input id="graspVariationPosition" type="range" min="0" max="5" step="0.5" value="0" /></label>
+          <label>Yaw range <strong id="graspVariationYawValue">±0°</strong><input id="graspVariationYaw" type="range" min="0" max="30" step="5" value="0" /></label>
+          <span>Changes apply on ↻ Reset. Start with ±1 cm.</span>
+        </section>
         <section id="policyEvaluationControls" class="policy-evaluation-controls" aria-label="Policy evaluation from demonstration">
           <div class="policy-evaluation-copy"><strong>Policy test start</strong><span>Restore the selected demonstration's initial state, then test the loaded policy.</span></div>
           <label>Demonstration<select id="policyEvaluationDemoSelect" aria-label="Demonstration start state"><option value="">No demonstration available</option></select></label>
@@ -2665,6 +2671,9 @@ function validateConfiguration(): boolean {
 }
 
 function applyConfiguration(): void {
+    const graspTest = selectedSimulationEngine === "isaaclab" && selectedIsaacTask === "graspgen";
+    document.querySelector<HTMLElement>("#graspVariationControls")!.hidden = !graspTest;
+    policyEvaluationControls.hidden = selectedSimulationEngine === "mujoco" || graspTest;
     const robotFile = robotFileInput.value.trim();
     const policyFile = policyFileInput.value.trim();
     robotFileDisplay.textContent = robotFile;
@@ -2781,7 +2790,8 @@ function updateEngineUi(): void {
     isaacDesktopButton.disabled = usesMujoco;
     trainingButton.title = usesMujoco ? "Open DAPG training" : "Open parallel Isaac Lab training";
     checkpointToolbar.hidden = usesMujoco;
-    policyEvaluationControls.hidden = usesMujoco;
+    policyEvaluationControls.hidden = usesMujoco || selectedIsaacTask === "graspgen";
+    document.querySelector<HTMLElement>("#graspVariationControls")!.hidden = usesMujoco || selectedIsaacTask !== "graspgen";
     episodeResetButton.hidden = usesMujoco;
     episodeResetButton.disabled = usesMujoco || !socket || socket.readyState !== WebSocket.OPEN || demoRecording;
     isaacTaskSelect.hidden = usesMujoco;
@@ -3656,11 +3666,18 @@ episodeResetButton.addEventListener("click", () => {
         // resume when the simulation was running, without an intermediate
         // randomized reset frame.
         if (!isPaused) sendSimulationCommand({type: "set_paused", paused: false});
-    } else if (!sendSimulationCommand({type: "reset_episode"})) return;
+    } else if (!sendSimulationCommand({type: "reset_episode", ...(selectedSimulationEngine === "isaaclab" && selectedIsaacTask === "graspgen" ? {
+        position_variation: Number((document.querySelector("#graspVariationPosition") as HTMLInputElement).value) / 100,
+        yaw_variation: Number((document.querySelector("#graspVariationYaw") as HTMLInputElement).value),
+    } : {})})) return;
     setStatus(evaluationReset ? "Restoring policy-test start…" : "Resetting robot and task object…", "connecting");
     window.setTimeout(() => setStatus(isPaused ? "Simulation reset and stopped" : "Simulation running", "connected"), 400);
 });
 sceneEditButton.addEventListener("click", returnToSceneEditor);
+for (const [inputId, valueId, unit] of [["graspVariationPosition", "graspVariationPositionValue", "cm"], ["graspVariationYaw", "graspVariationYawValue", "°"]]) {
+    const input = document.getElementById(inputId) as HTMLInputElement;
+    input.addEventListener("input", () => { document.getElementById(valueId)!.textContent = `±${input.value}${unit}`; });
+}
 trainingButton.addEventListener("click", () => setTrainingOpen(trainingPanel.hasAttribute("hidden")));
 demoModeButton.addEventListener("click", () => setDemoPanelOpen(demoPanel.hasAttribute("hidden")));
 demoRecordButton.addEventListener("click", startDemoRecording);
