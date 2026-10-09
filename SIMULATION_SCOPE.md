@@ -64,8 +64,10 @@ when a direct dependency blocks the requested simulation work.
 - `isaac_graspgen_task.py` / `isaac_graspgen_controller.py`: separate pretrained
   grasp-generator + scripted IK pickup of a horizontal tube on supports.
 - `isaac_rack_insert_task.py`: additional `rack_insert` task, initially upright
-  tube and exact static rack mesh. It has separate PPO checkpoints; no pretrained
-  insertion policy is supplied. The selected hole is source-local
+  tube and exact static rack mesh. It has separate PPO checkpoints and a
+  contact-aware IK reference (`isaac_rack_controller.py`), not a pretrained neural
+  insertion policy. `test_rack_controller.py` validates real pickup, insertion,
+  release and six seconds of stability at three start positions. The selected hole is source-local
   `(0.0136571, -0.0136573)` with world center `(0.5636571, 0.1063427)`.
 - `assets/labware/rack_insert_collision.usda`: baked visual/collision mesh with
   real holes; rebuild using `build_rack_insert_asset.py` in Isaac Python.

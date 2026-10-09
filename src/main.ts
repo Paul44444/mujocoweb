@@ -1528,7 +1528,7 @@ function updateTrainingUi(): void {
     trainingEngineLabel.textContent = usesIsaac ? "NVIDIA Isaac Lab · RSL-RL PPO" : "MuJoCo · DAPG";
     trainingSafety.textContent = usesIsaac
         ? selectedIsaacTask === "rack_insert"
-            ? "New trainable task: grasp an upright tube, align with a real rack hole, insert and release. Exact static rack collider. No pretrained insertion policy yet; record demos or train a separate policy."
+            ? "Upright tube insertion: a contact-aware IK reference is available in Load policy (not a neural policy). Record demos or train a separate PPO/BC policy; existing checkpoints are preserved."
         : selectedIsaacTask === "graspgen"
             ? "Pretrained NVIDIA GraspGenX grasp predictions + Isaac Lula IK. Playback only; select Stage 1 Lift Test Tube for PPO/BC training. This is not GEN-1.5 or an end-to-end learned arm policy."
         : selectedIsaacTask === "vision"
@@ -2701,7 +2701,7 @@ function applyConfiguration(): void {
     }
     interactionHint.textContent = selectedSimulationEngine === "isaaclab"
         ? selectedIsaacTask === "rack_insert"
-            ? "New insertion task · upright tube + real rack holes · record a demo or train a new policy"
+            ? "Upright insertion · automatic contact-aware IK reference in Load policy · Reset to repeat · PPO/BC also available"
         : selectedIsaacTask === "graspgen"
             ? "Pretrained grasp + IK · picks a horizontal tube from its supports · Reset to repeat"
         : selectedIsaacTask === "vision"
@@ -3584,6 +3584,20 @@ function handleTextMessage(message: string): void {
         const data = JSON.parse(message);
 
         if (data.type === "frame_metadata") {
+            if (selectedIsaacTask === "rack_insert" && data.mode === "reference_controller") {
+                const phases: Record<string, string> = {
+                    settle: "Waiting for the tube to settle", approach: "Approaching the upright tube",
+                    grasp: "Aligning the fingertips", close: "Closing the gripper", lift: "Lifting and checking the grasp",
+                    transfer: "Correcting tilt and moving above the rack", lower: "Carefully inserting into the hole",
+                    release: "Releasing the seated tube", retreat: "Withdrawing the arm", done: "Tube placed · Reset to repeat",
+                    failed: "Insertion stopped safely · Reset to retry",
+                };
+                interactionHint.textContent = `IK reference (not neural) · ${phases[String(data.grasp_controller_stage)] ?? "Preparing insertion"}`;
+                interactionHint.dataset.reference = "1";
+            } else if (interactionHint.dataset.reference) {
+                delete interactionHint.dataset.reference;
+                interactionHint.textContent = "Isaac Lab · selected policy playback";
+            }
             if (typeof data.paused === "boolean") {
                 if (pendingPauseState === data.paused) pendingPauseState = null;
                 if (pendingPauseState === null && data.paused !== isPaused) {
