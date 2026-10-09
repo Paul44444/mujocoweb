@@ -696,6 +696,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <p id="trainingActiveRun" class="generator-message" aria-live="polite"></p>
     <p id="trainingMessage" class="generator-message" aria-live="polite">Ready to create an isolated training run.</p>
     <p id="trainingImitationResult" class="generator-message" hidden></p>
+    <p id="trainingDemoGuidance" class="generator-message" hidden></p>
     <div class="training-metrics">
       <article><span>Status</span><strong id="trainingStatus">Idle</strong></article>
       <article><span>Iteration</span><strong id="trainingIteration">0 / 0</strong></article>
@@ -1015,6 +1016,7 @@ type TrainingRun = {
     metrics: TrainingMetric[];
     bc_metrics?: BehaviorCloningMetric[];
     bc_validation?: {ee_rmse_m?: number; lifted?: boolean; steps?: number; demo_steps?: number};
+    demo_ppo?: {variation_cm?: number; bc_loss?: number | null; critic_warmup?: boolean};
     checkpoints: string[];
 };
 type IsaacCheckpoint = {id: string; run_id: string; name: string; label: string; modified_at: number; deletable: boolean; isaac_task?: IsaacTask};
@@ -1129,6 +1131,10 @@ function chartMarkers(points: string[], radius: number, color: string): string {
 }
 
 function renderTrainingRun(run: TrainingRun | null): void {
+    const guidance = document.querySelector<HTMLElement>("#trainingDemoGuidance")!;
+    const demoPpo = run?.demo_ppo;
+    guidance.hidden = demoPpo?.variation_cm == null;
+    if (demoPpo?.variation_cm != null) guidance.textContent = `Demo-guided PPO · ${demoPpo.critic_warmup ? "Critic warmup; BC actor held fixed" : "Demo imitation remains active"} · Object XY variation ±${demoPpo.variation_cm.toFixed(2)} cm${demoPpo.bc_loss != null ? ` · PPO-stage BC loss ${demoPpo.bc_loss.toFixed(5)}` : ""}`;
     const imitationResult = document.querySelector<HTMLElement>("#trainingImitationResult")!;
     const validation = run?.bc_validation;
     imitationResult.hidden = validation?.ee_rmse_m == null;
@@ -3670,7 +3676,7 @@ trainingStartButton.addEventListener("click", () => void startTraining());
 trainingDemosSelect.addEventListener("change", () => {
     trainingBcEpochs.disabled = trainingDemosSelect.selectedOptions.length === 0;
     trainingMessage.textContent = trainingDemosSelect.selectedOptions.length
-        ? `${trainingDemosSelect.selectedOptions.length} demonstration(s) selected for imitation learning before PPO.`
+            ? `${trainingDemosSelect.selectedOptions.length} demonstration(s) selected. PPO retains imitation guidance: exact demo starts first, then gradually increasing XY variation up to ±5 cm.`
         : "No demonstrations selected; training will use PPO from scratch or the chosen checkpoint.";
 });
 trainingStopButton.addEventListener("click", () => void stopTraining());
