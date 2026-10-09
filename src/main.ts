@@ -678,11 +678,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <p id="trainingSafety" class="training-safety">Fine-tunes a private copy of the stable Relocate checkpoint. The reference checkpoint is never overwritten.</p>
     <div class="training-controls">
       <label>Checkpoint name<input id="trainingName" type="text" maxlength="48" placeholder="Automatic name" /></label>
-      <label>Iterations<input id="trainingIterations" type="number" min="1" step="1" value="10" /></label>
+      <label>Iterations · additional when resuming<input id="trainingIterations" type="number" min="1" step="1" value="10" /></label>
       <label id="trainingTrajectoriesLabel">Trajectories<input id="trainingTrajectories" type="number" min="1" max="8" value="3" /></label>
       <label id="trainingHorizonLabel">Horizon<input id="trainingHorizon" type="number" min="20" max="500" value="200" /></label>
       <label id="trainingEnvironmentsLabel" hidden>Parallel environments<select id="trainingEnvironments"><option value="16">16</option><option value="32">32</option><option value="64">64</option><option value="128">128</option><option value="256" selected>256 · recommended</option><option value="512">512 · experimental</option></select></label>
-      <label id="trainingResumeLabel" hidden>Continue training from checkpoint<select id="trainingResumeSelect"><option value="">From scratch</option></select></label>
+      <label id="trainingResumeLabel" hidden>Continue training from checkpoint<select id="trainingResumeSelect"><option value="">From scratch</option></select><small>Demo checkpoints restore their demos and curriculum automatically, without repeating BC.</small></label>
       <label id="trainingDemosLabel" class="training-demos-label" hidden>Warm start from demonstrations<select id="trainingDemosSelect" multiple size="3" aria-label="Demonstrations used for behavior cloning"></select><small>Optional · Ctrl/Cmd-click selects several demos</small></label>
       <label id="trainingBcEpochsLabel" hidden>Imitation epochs<input id="trainingBcEpochs" type="number" min="1" max="2000" step="1" value="200" /></label>
       <label>Seed<input id="trainingSeed" type="number" min="0" value="123" /></label>
