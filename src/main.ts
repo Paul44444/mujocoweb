@@ -693,6 +693,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <button id="trainingCancelButton" class="training-cancel-button" type="button" disabled>Cancel training</button>
       <label class="training-run-history"><span>Progress history · one entry per training run</span><select id="trainingRunSelect" aria-label="Training run progress history"><option value="">No runs yet</option></select></label>
     </div>
+    <p id="trainingActiveRun" class="generator-message" aria-live="polite"></p>
     <p id="trainingMessage" class="generator-message" aria-live="polite">Ready to create an isolated training run.</p>
     <p id="trainingImitationResult" class="generator-message" hidden></p>
     <div class="training-metrics">
@@ -1021,6 +1022,21 @@ type DemoRecord = {id: string; name: string; steps: number; duration: number; ta
 let selectedTaskId: TaskId = defaultConfiguration.taskId;
 let generatedObject: GeneratedObject | null = null;
 let selectedTrainingRun = "";
+let activeTrainingRun: TrainingRun | null = null;
+let trainingControlPending = false;
+
+function renderTrainingControls(): void {
+    const paused = activeTrainingRun?.status.status === "paused";
+    trainingStartButton.disabled = trainingControlPending || activeTrainingRun !== null;
+    trainingStopButton.disabled = trainingControlPending || activeTrainingRun === null;
+    trainingCancelButton.disabled = trainingControlPending || activeTrainingRun === null;
+    trainingStopButton.textContent = paused ? "Continue" : "Pause";
+    trainingStopButton.dataset.action = paused ? "continue" : "pause";
+    const label = document.querySelector<HTMLParagraphElement>("#trainingActiveRun")!;
+    label.textContent = activeTrainingRun
+        ? `Active process: ${activeTrainingRun.config.name || activeTrainingRun.id} · ${activeTrainingRun.config.engine || "mujoco"} · ${activeTrainingRun.status.status} · iteration ${activeTrainingRun.status.iteration ?? 0}. Pause / Continue and Cancel control this process${selectedTrainingRun !== activeTrainingRun.id ? "; the chart below shows a different historical run" : ""}. Cancel it before starting a new run; existing checkpoints are kept.`
+        : "No active training process. You can start a new run.";
+}
 let trainingPollTimer: number | null = null;
 type ChartRange = {minimum: number; maximum: number};
 type TrainingChartState = {metrics: TrainingMetric[]; bcMetrics: BehaviorCloningMetric[]; bcLogRange: ChartRange; bcEpochs: number; rewardRange: ChartRange; lossRange: ChartRange; left: number; top: number; width: number; height: number};
@@ -1124,17 +1140,11 @@ function renderTrainingRun(run: TrainingRun | null): void {
         trainingLoss.textContent = "—";
         trainingCheckpoints.textContent = "None yet";
         trainingChart.innerHTML = `<text x="320" y="112" text-anchor="middle" fill="#71717a" font-size="15">Metrics appear after the first iteration</text>`;
-        trainingStopButton.disabled = true;
-        trainingStopButton.textContent = "Stop";
-        trainingStopButton.dataset.action = "pause";
-        trainingCancelButton.disabled = true;
-        trainingStartButton.disabled = false;
+        renderTrainingControls();
         trainingChartState = null;
         return;
     }
     const state = run.status.status;
-    const active = state === "starting" || state === "training";
-    const paused = state === "paused";
     const imitation = run.status.phase === "behavior_cloning";
     const latest = run.metrics.at(-1);
     trainingStatus.textContent = imitation ? "Imitation" : state[0]?.toUpperCase() + state.slice(1);
@@ -1146,11 +1156,7 @@ function renderTrainingRun(run: TrainingRun | null): void {
         ? run.status.bc_loss.toFixed(5)
         : latest ? latest.vf_error_after.toFixed(4) : "—";
     trainingLossLabel.textContent = imitation ? "BC loss" : selectedSimulationEngine === "isaaclab" ? "Value loss" : "VF error";
-    trainingStopButton.disabled = !active && !paused;
-    trainingStopButton.textContent = paused ? "Continue" : "Stop";
-    trainingStopButton.dataset.action = paused ? "continue" : "pause";
-    trainingCancelButton.disabled = !active && !paused;
-    trainingStartButton.disabled = active || paused;
+    renderTrainingControls();
     trainingCheckpoints.textContent = run.checkpoints.length ? run.checkpoints.join(" · ") : "None yet";
     if (imitation) trainingMessage.textContent = "Learning the selected demonstration actions first; PPO fine-tuning starts automatically afterwards.";
     if (run.status.error) trainingMessage.textContent = run.status.error;
@@ -1254,7 +1260,9 @@ trainingChart.addEventListener("pointerleave", () => trainingChart.querySelector
 
 async function refreshTrainingRuns(preferred = selectedTrainingRun): Promise<void> {
     try {
-        const result = await trainingRequest<{runs: TrainingRun[]}>(`/runs?engine=${selectedSimulationEngine}${selectedSimulationEngine === "isaaclab" ? `&isaac_task=${selectedIsaacTask}` : ""}`);
+        const result = await trainingRequest<{runs: TrainingRun[]; active_run?: TrainingRun | null}>(`/runs?engine=${selectedSimulationEngine}${selectedSimulationEngine === "isaaclab" ? `&isaac_task=${selectedIsaacTask}` : ""}`);
+        activeTrainingRun = result.active_run ?? result.runs.find((run) => ["starting", "training", "paused"].includes(run.status.status)) ?? null;
+        if (activeTrainingRun && !result.runs.some((run) => run.id === activeTrainingRun!.id)) result.runs.unshift(activeTrainingRun);
         trainingRunSelect.replaceChildren();
         if (!result.runs.length) {
             trainingRunSelect.append(new Option("No runs yet", ""));
@@ -1270,7 +1278,7 @@ async function refreshTrainingRuns(preferred = selectedTrainingRun): Promise<voi
                 run.id,
             ));
         }
-        const run = result.runs.find((item) => item.id === preferred) ?? result.runs[0];
+        const run = result.runs.find((item) => item.id === preferred) ?? activeTrainingRun ?? result.runs[0];
         selectedTrainingRun = run.id;
         trainingRunSelect.value = run.id;
         renderTrainingRun(run);
@@ -1580,40 +1588,51 @@ async function startTraining(): Promise<void> {
         await refreshTrainingRuns(run.id);
     } catch (error) {
         trainingMessage.textContent = error instanceof Error ? error.message : "Could not start training.";
-        trainingStartButton.disabled = false;
+        await refreshTrainingRuns();
     }
 }
 
 async function stopTraining(): Promise<void> {
-    if (!selectedTrainingRun) return;
+    if (!activeTrainingRun || trainingControlPending) return;
+    const runId = activeTrainingRun.id;
     const continuing = trainingStopButton.dataset.action === "continue";
-    trainingStopButton.disabled = true;
+    trainingControlPending = true;
+    renderTrainingControls();
     trainingMessage.textContent = continuing ? "Continuing the same training process and learning curve…" : "Pausing the training process with its current GPU and optimizer state…";
     try {
         const action = continuing ? "continue" : "stop";
-        const run = await trainingRequest<TrainingRun>(`/runs/${encodeURIComponent(selectedTrainingRun)}/${action}`, {method: "POST"});
+        const run = await trainingRequest<TrainingRun>(`/runs/${encodeURIComponent(runId)}/${action}`, {method: "POST"});
+        activeTrainingRun = run;
+        selectedTrainingRun = run.id;
         renderTrainingRun(run);
         trainingMessage.textContent = continuing ? "Training continued. New iterations will extend the existing curve." : "Training paused. Its exact process state is retained; press Continue to resume.";
     } catch (error) {
         trainingMessage.textContent = error instanceof Error ? error.message : `Could not ${continuing ? "continue" : "pause"} training.`;
-        trainingStopButton.disabled = false;
+    } finally {
+        trainingControlPending = false;
+        await refreshTrainingRuns();
     }
 }
 
 async function cancelTraining(): Promise<void> {
-    if (!selectedTrainingRun) return;
-    if (!window.confirm("Cancel this training run? Existing metrics and checkpoints will be kept, but the in-memory optimizer state will be lost.")) return;
-    trainingCancelButton.disabled = true;
-    trainingStopButton.disabled = true;
+    if (!activeTrainingRun || trainingControlPending) return;
+    const runId = activeTrainingRun.id;
+    if (!window.confirm(`Cancel active training "${activeTrainingRun.config.name || runId}"? Existing metrics and checkpoints will be kept, but the in-memory optimizer state will be lost.`)) return;
+    trainingControlPending = true;
+    renderTrainingControls();
     trainingMessage.textContent = "Cancelling the training process and preserving its checkpoints…";
     try {
-        const run = await trainingRequest<TrainingRun>(`/runs/${encodeURIComponent(selectedTrainingRun)}/cancel`, {method: "POST"});
+        const run = await trainingRequest<TrainingRun>(`/runs/${encodeURIComponent(runId)}/cancel`, {method: "POST"});
+        activeTrainingRun = null;
+        selectedTrainingRun = run.id;
         renderTrainingRun(run);
         trainingMessage.textContent = "Training cancelled. Existing checkpoints were kept; you can start a new run now.";
         await refreshCheckpoints();
     } catch (error) {
         trainingMessage.textContent = error instanceof Error ? error.message : "Could not cancel training.";
-        await refreshTrainingRuns(selectedTrainingRun);
+    } finally {
+        trainingControlPending = false;
+        await refreshTrainingRuns();
     }
 }
 
