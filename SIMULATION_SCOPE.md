@@ -74,3 +74,13 @@ when a direct dependency blocks the requested simulation work.
 - `test_rack_insert_physics.py`: GPU regression for standing tube, open hole,
   solid rim and insertion reward. `training_api.py` and
   `isaac_training_worker.py` handle task-specific training and checkpoint lists.
+- `isaac_rack_vision_task.py`, `isaac_rack_perception.py`,
+  `isaac_rack_vision_controller.py`: separate `rack_vision` RGB-D marker playback.
+  Two calibrated cameras observe known spherical markers; no object/rack state
+  is read by perception or the vision controller. Tube axis/yaw symmetry and
+  rack-local hole geometry are known. The static rack's last image-measured pose
+  survives temporary occlusion and is discarded on reset. Missing tube markers
+  or inconsistent measurements hold motion;
+  no truth-pose fallback. This is an IK reference, not a neural policy or
+  sensor-noise-tested real-robot controller. `test_rack_vision.py` compares
+  estimates to truth ONLY as a test diagnostic and verifies physical insertion.
