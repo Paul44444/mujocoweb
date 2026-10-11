@@ -124,7 +124,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               <option value="rack_insert">New · Upright Tube → Rack Hole</option>
               <option value="rack_vision">Vision · Tube → Rack · RGB-D markers</option>
               <option value="rack_five">Labware · Five Tubes + Incubator</option>
-              <option value="incubator">Labware · Tube → Incubator</option>
+              <option value="incubator">Labware · Rack → Incubator</option>
             </select>
             <button id="sceneAccountButton" class="setup-button" type="button" aria-controls="sceneAccountPanel" aria-expanded="false">
               <span aria-hidden="true">◎</span><span id="sceneAccountLabel">User: Guest</span>
@@ -946,7 +946,7 @@ let selectedSimulationEngine: SimulationEngine = "isaaclab";
 let selectedIsaacTask: IsaacTask = "state";
 
 function isaacTaskName(task: IsaacTask): string {
-    if (task === "incubator") return "Tube → Incubator";
+    if (task === "incubator") return "Rack → Incubator";
     if (task === "rack_five") return "Five Tubes + Incubator";
     if (task === "rack_vision") return "Vision · Tube → Rack";
     if (task === "rack_insert") return "Upright Tube → Rack Hole";
@@ -2703,7 +2703,7 @@ function applyConfiguration(): void {
     const task = taskCatalog[selectedTaskId];
     configurationSummary.textContent = selectedSimulationEngine === "isaaclab"
         ? selectedIsaacTask === "incubator"
-            ? "NVIDIA Isaac Lab · Tube → Incubator · Physical grasp + IK · Automatic door"
+            ? "NVIDIA Isaac Lab · Rack → Incubator · Cyan tube pickup · Physical grasp + IK · Automatic door"
         : selectedIsaacTask === "rack_five"
             ? "NVIDIA Isaac Lab · Five tubes + incubator · Articulated door · Scene preview"
         : selectedIsaacTask === "rack_vision"
@@ -2725,7 +2725,7 @@ function applyConfiguration(): void {
     }
     interactionHint.textContent = selectedSimulationEngine === "isaaclab"
         ? selectedIsaacTask === "incubator"
-            ? "Tube → Incubator · contact-only pickup, horizontal loading and automatic door · Reset to repeat · not a neural policy"
+            ? "Rack → Incubator · cyan tube from the front-left opening · four tubes stay in the rack · Reset to repeat · IK, not neural"
         : selectedIsaacTask === "rack_five"
             ? "Five tubes + incubator · Open/close door below the scene · Reset restores tubes and closes door · no autonomous policy yet"
         : selectedIsaacTask === "rack_vision"
@@ -3629,6 +3629,8 @@ function handleTextMessage(message: string): void {
                     withdraw: "Withdrawing the open gripper", park: "Clearing the door sweep", close_door: "Closing the incubator door",
                 };
                 if (selectedIsaacTask === "incubator") {
+                    phases.approach = "Approaching the cyan tube in the rack";
+                    phases.lift = "Extracting vertically above the rack and neighbouring tubes";
                     phases.release = "Releasing the tube inside";
                     phases.done = "Tube inside · Door closed · Reset to repeat";
                 }
