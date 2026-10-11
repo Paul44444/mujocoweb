@@ -59,6 +59,11 @@ when a direct dependency blocks the requested simulation work.
 
 ## Isaac Lab tasks (only when explicitly in scope)
 
+- `isaac_rack_five_task.py`, `isaac_rack_five_layout.py`: separate `rack_five`
+  scene preview with five dynamic, detailed tubes seated in slots 1, 3, 5, 8,
+  and 10 of the real twelve-hole rack (two rows of six). No autonomous policy,
+  vision pose estimator, or learning task yet. `test_rack_five_physics.py`
+  verifies seated stability and resetting all five objects.
 - Backend `isaac_web_worker.py`: task selection, persistent GPU viewer, teleop.
 - `isaac_labware_task.py`: existing upright lift and legacy rack-placement tasks.
 - `isaac_graspgen_task.py` / `isaac_graspgen_controller.py`: separate pretrained
