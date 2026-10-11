@@ -59,6 +59,12 @@ when a direct dependency blocks the requested simulation work.
 
 ## Isaac Lab tasks (only when explicitly in scope)
 
+- `isaac_incubator_task.py`, `isaac_incubator_controller.py`: separate `incubator`
+  playback reference. One upright tube, real friction grasp, Lula IK rotation to
+  horizontal, lower-shelf loading and automatic physical door closure. No
+  learned policy, object attachment or truth-free perception. Fixed incubator
+  base; compound cavity colliders preserve shelves and openings. Regression:
+  `test_incubator_loading.py`; reference is exposed only after physics validation.
 - `isaac_rack_five_task.py`, `isaac_rack_five_layout.py`: separate `rack_five`
   scene preview with five dynamic, detailed tubes seated in slots 1, 3, 5, 8,
   and 10 of the real twelve-hole rack (two rows of six). No autonomous policy,

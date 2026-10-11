@@ -124,6 +124,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               <option value="rack_insert">New · Upright Tube → Rack Hole</option>
               <option value="rack_vision">Vision · Tube → Rack · RGB-D markers</option>
               <option value="rack_five">Labware · Five Tubes + Incubator</option>
+              <option value="incubator">Labware · Tube → Incubator</option>
             </select>
             <button id="sceneAccountButton" class="setup-button" type="button" aria-controls="sceneAccountPanel" aria-expanded="false">
               <span aria-hidden="true">◎</span><span id="sceneAccountLabel">User: Guest</span>
@@ -940,11 +941,12 @@ let pinchDistance: number | null = null;
 let cameraGestureMoved = false;
 let suppressSimulationClick = false;
 type SimulationEngine = "isaaclab" | "mujoco";
-type IsaacTask = "state" | "vision" | "labware_lift" | "labware" | "graspgen" | "rack_insert" | "rack_vision" | "rack_five";
+type IsaacTask = "state" | "vision" | "labware_lift" | "labware" | "graspgen" | "rack_insert" | "rack_vision" | "rack_five" | "incubator";
 let selectedSimulationEngine: SimulationEngine = "isaaclab";
 let selectedIsaacTask: IsaacTask = "state";
 
 function isaacTaskName(task: IsaacTask): string {
+    if (task === "incubator") return "Tube → Incubator";
     if (task === "rack_five") return "Five Tubes + Incubator";
     if (task === "rack_vision") return "Vision · Tube → Rack";
     if (task === "rack_insert") return "Upright Tube → Rack Hole";
@@ -1048,7 +1050,7 @@ let trainingControlPending = false;
 
 function renderTrainingControls(): void {
     const paused = activeTrainingRun?.status.status === "paused";
-    trainingStartButton.disabled = trainingControlPending || activeTrainingRun !== null || (selectedSimulationEngine === "isaaclab" && (selectedIsaacTask === "graspgen" || selectedIsaacTask === "rack_vision" || selectedIsaacTask === "rack_five"));
+    trainingStartButton.disabled = trainingControlPending || activeTrainingRun !== null || (selectedSimulationEngine === "isaaclab" && (selectedIsaacTask === "graspgen" || selectedIsaacTask === "rack_vision" || selectedIsaacTask === "rack_five" || selectedIsaacTask === "incubator"));
     trainingStopButton.disabled = trainingControlPending || activeTrainingRun === null;
     trainingCancelButton.disabled = trainingControlPending || activeTrainingRun === null;
     trainingStopButton.textContent = paused ? "Continue" : "Pause";
@@ -1536,7 +1538,9 @@ function updateTrainingUi(): void {
     const usesIsaac = selectedSimulationEngine === "isaaclab";
     trainingEngineLabel.textContent = usesIsaac ? "NVIDIA Isaac Lab · RSL-RL PPO" : "MuJoCo · DAPG";
     trainingSafety.textContent = usesIsaac
-        ? selectedIsaacTask === "rack_five"
+        ? selectedIsaacTask === "incubator"
+            ? "Physical grasp + IK reference with automatic door: playback only, not a trained neural policy. Existing learning tasks are unchanged."
+        : selectedIsaacTask === "rack_five"
             ? "Separate scene preview: five movable tubes seated in a twelve-hole rack. No learning objective or autonomous policy is defined yet."
         : selectedIsaacTask === "rack_vision"
             ? "RGB-D marker perception + IK reference, playback only. Object/rack poses are estimated from images, not simulator state. Use the original upright insertion task for PPO/BC."
@@ -1564,7 +1568,7 @@ function updateTrainingUi(): void {
     trainingStartButton.textContent = usesIsaac ? "Start Isaac training" : "Start new training run";
     trainingLossLabel.textContent = usesIsaac ? "Value loss" : "VF error";
     trainingMessage.textContent = usesIsaac
-        ? selectedIsaacTask === "rack_five" ? "Five-tube scene preview; training is not configured yet." : selectedIsaacTask === "rack_vision" ? "Vision reference is playback-only." : selectedIsaacTask === "graspgen" ? "Pretrained pickup is playback-only; no training needed." : "Ready for isolated GPU training with parallel environments."
+        ? selectedIsaacTask === "incubator" ? "Incubator loading reference is playback-only; Reset repeats the physical sequence." : selectedIsaacTask === "rack_five" ? "Five-tube scene preview; training is not configured yet." : selectedIsaacTask === "rack_vision" ? "Vision reference is playback-only." : selectedIsaacTask === "graspgen" ? "Pretrained pickup is playback-only; no training needed." : "Ready for isolated GPU training with parallel environments."
         : "Ready to create an isolated training run.";
     renderTrainingDemoOptions();
     renderTrainingControls();
@@ -2691,14 +2695,16 @@ function applyConfiguration(): void {
     updateIncubatorControls();
     const graspTest = selectedSimulationEngine === "isaaclab" && selectedIsaacTask === "graspgen";
     document.querySelector<HTMLElement>("#graspVariationControls")!.hidden = !graspTest;
-    policyEvaluationControls.hidden = selectedSimulationEngine === "mujoco" || graspTest || selectedIsaacTask === "rack_vision" || selectedIsaacTask === "rack_five";
+    policyEvaluationControls.hidden = selectedSimulationEngine === "mujoco" || graspTest || selectedIsaacTask === "rack_vision" || selectedIsaacTask === "rack_five" || selectedIsaacTask === "incubator";
     const robotFile = robotFileInput.value.trim();
     const policyFile = policyFileInput.value.trim();
     robotFileDisplay.textContent = robotFile;
     policyFileDisplay.textContent = policyFile;
     const task = taskCatalog[selectedTaskId];
     configurationSummary.textContent = selectedSimulationEngine === "isaaclab"
-        ? selectedIsaacTask === "rack_five"
+        ? selectedIsaacTask === "incubator"
+            ? "NVIDIA Isaac Lab · Tube → Incubator · Physical grasp + IK · Automatic door"
+        : selectedIsaacTask === "rack_five"
             ? "NVIDIA Isaac Lab · Five tubes + incubator · Articulated door · Scene preview"
         : selectedIsaacTask === "rack_vision"
             ? "NVIDIA Isaac Lab · RGB-D marker perception → upright tube rack insertion"
@@ -2718,7 +2724,9 @@ function applyConfiguration(): void {
         configurationSummary.textContent = `${task.name} · ${generatedObject.name}`;
     }
     interactionHint.textContent = selectedSimulationEngine === "isaaclab"
-        ? selectedIsaacTask === "rack_five"
+        ? selectedIsaacTask === "incubator"
+            ? "Tube → Incubator · contact-only pickup, horizontal loading and automatic door · Reset to repeat · not a neural policy"
+        : selectedIsaacTask === "rack_five"
             ? "Five tubes + incubator · Open/close door below the scene · Reset restores tubes and closes door · no autonomous policy yet"
         : selectedIsaacTask === "rack_vision"
             ? "Vision reference · RGB-D cameras + markers · static rack calibrated from images · no direct object/rack pose access"
@@ -2789,7 +2797,7 @@ async function syncIsaacTaskSelection(): Promise<void> {
     if (selectedSimulationEngine !== "isaaclab" || isaacTaskSelect.disabled) return;
     try {
         const result = await trainingRequest<{task?: IsaacTask}>("/isaac-task");
-        const backendTask: IsaacTask = result.task === "vision" || result.task === "labware_lift" || result.task === "labware" || result.task === "graspgen" || result.task === "rack_insert" || result.task === "rack_vision" || result.task === "rack_five" ? result.task : "state";
+        const backendTask: IsaacTask = result.task === "vision" || result.task === "labware_lift" || result.task === "labware" || result.task === "graspgen" || result.task === "rack_insert" || result.task === "rack_vision" || result.task === "rack_five" || result.task === "incubator" ? result.task : "state";
         if (backendTask === selectedIsaacTask) return;
         selectedIsaacTask = backendTask;
         isaacTaskSelect.value = backendTask;
@@ -2821,7 +2829,7 @@ function updateEngineUi(): void {
     isaacDesktopButton.disabled = usesMujoco;
     trainingButton.title = usesMujoco ? "Open DAPG training" : "Open parallel Isaac Lab training";
     checkpointToolbar.hidden = usesMujoco;
-    policyEvaluationControls.hidden = usesMujoco || selectedIsaacTask === "graspgen" || selectedIsaacTask === "rack_vision" || selectedIsaacTask === "rack_five";
+    policyEvaluationControls.hidden = usesMujoco || selectedIsaacTask === "graspgen" || selectedIsaacTask === "rack_vision" || selectedIsaacTask === "rack_five" || selectedIsaacTask === "incubator";
     document.querySelector<HTMLElement>("#graspVariationControls")!.hidden = usesMujoco || selectedIsaacTask !== "graspgen";
     episodeResetButton.hidden = usesMujoco;
     episodeResetButton.disabled = usesMujoco || !socket || socket.readyState !== WebSocket.OPEN || demoRecording;
@@ -2844,7 +2852,7 @@ try {
     if (storedConfiguration) {
         const parsed = JSON.parse(storedConfiguration) as Partial<typeof defaultConfiguration> & {generatedObject?: GeneratedObject};
         selectedSimulationEngine = parsed.engine === "mujoco" ? "mujoco" : "isaaclab";
-        selectedIsaacTask = parsed.isaacTask === "vision" || parsed.isaacTask === "labware_lift" || parsed.isaacTask === "labware" || parsed.isaacTask === "graspgen" || parsed.isaacTask === "rack_insert" || parsed.isaacTask === "rack_vision" || parsed.isaacTask === "rack_five" ? parsed.isaacTask : "state";
+        selectedIsaacTask = parsed.isaacTask === "vision" || parsed.isaacTask === "labware_lift" || parsed.isaacTask === "labware" || parsed.isaacTask === "graspgen" || parsed.isaacTask === "rack_insert" || parsed.isaacTask === "rack_vision" || parsed.isaacTask === "rack_five" || parsed.isaacTask === "incubator" ? parsed.isaacTask : "state";
         activateEngineScene(selectedSimulationEngine);
         const storedTask = parsed.taskId && parsed.taskId in taskCatalog
             ? parsed.taskId as TaskId
@@ -3285,7 +3293,7 @@ function stopDemoRecording(): void {
 
 function isaacScenePayload(): SceneAsset[] {
     const supported = new Set(["box", "sphere", "cylinder", "kuka_allegro"]);
-    const hideDefaultCube = selectedIsaacTask === "labware_lift" || selectedIsaacTask === "labware" || selectedIsaacTask === "graspgen" || selectedIsaacTask === "rack_insert" || selectedIsaacTask === "rack_vision" || selectedIsaacTask === "rack_five";
+    const hideDefaultCube = selectedIsaacTask === "labware_lift" || selectedIsaacTask === "labware" || selectedIsaacTask === "graspgen" || selectedIsaacTask === "rack_insert" || selectedIsaacTask === "rack_vision" || selectedIsaacTask === "rack_five" || selectedIsaacTask === "incubator";
     return sceneAssets
         .filter((asset) => supported.has(asset.asset) && !(hideDefaultCube && asset.id === "training-cube"))
         .map((asset) => {
@@ -3609,14 +3617,21 @@ function handleTextMessage(message: string): void {
         const data = JSON.parse(message);
 
         if (data.type === "frame_metadata") {
-            if ((selectedIsaacTask === "rack_insert" || selectedIsaacTask === "rack_vision") && data.mode === "reference_controller") {
+            if ((selectedIsaacTask === "rack_insert" || selectedIsaacTask === "rack_vision" || selectedIsaacTask === "incubator") && data.mode === "reference_controller") {
                 const phases: Record<string, string> = {
                     settle: "Waiting for the tube to settle", approach: "Approaching the upright tube",
                     grasp: "Aligning the fingertips", close: "Closing the gripper", lift: "Lifting and checking the grasp",
                     transfer: "Correcting tilt and moving above the rack", lower: "Carefully inserting into the hole",
                     release: "Releasing the seated tube", retreat: "Withdrawing the arm", done: "Tube placed · Reset to repeat",
                     failed: "Insertion stopped safely · Reset to retry",
+                    open_door: "Opening the incubator door", rotate: "Turning the tube horizontally",
+                    preinsert: "Aligning with the lower shelf", insert: "Moving through the compartment opening",
+                    withdraw: "Withdrawing the open gripper", park: "Clearing the door sweep", close_door: "Closing the incubator door",
                 };
+                if (selectedIsaacTask === "incubator") {
+                    phases.release = "Releasing the tube inside";
+                    phases.done = "Tube inside · Door closed · Reset to repeat";
+                }
                 const perception = selectedIsaacTask === "rack_vision" ? `RGB-D · ${data.rack_perception ?? "Waiting for images"} · ` : "";
                 interactionHint.textContent = `${perception}IK reference (not neural) · ${phases[String(data.grasp_controller_stage)] ?? "Preparing insertion"}`;
                 interactionHint.dataset.reference = "1";
@@ -3984,7 +3999,7 @@ document.querySelector<HTMLButtonElement>("#incubatorCloseButton")!.addEventList
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 isaacTaskSelect.addEventListener("change", () => {
     const value = isaacTaskSelect.value;
-    const task: IsaacTask = value === "vision" || value === "labware_lift" || value === "labware" || value === "graspgen" || value === "rack_insert" || value === "rack_vision" || value === "rack_five"
+    const task: IsaacTask = value === "vision" || value === "labware_lift" || value === "labware" || value === "graspgen" || value === "rack_insert" || value === "rack_vision" || value === "rack_five" || value === "incubator"
         ? value
         : "state";
     if (task !== selectedIsaacTask) void selectIsaacTask(task);
