@@ -6,6 +6,12 @@ scoped unless the request or an observed dependency requires expanding it.
 
 ## Primary working files
 
+The IsaacLab incubator scene additionally uses `isaac_centrifuge_asset.py` in
+the backend. `build_centrifuge_asset.py` converts the owner's OBJ archive into
+local `assets/labware/centrifuge_scifi.usdc` and textures (not published in Git).
+The centrifuge is static, with triangle-mesh collisions, at `(0.63,-0.43,0)`;
+the supplied single mesh has no articulated lid, rotor or animations.
+
 | Area | File |
 | --- | --- |
 | Browser scene editor, WebSocket client, drag/drop, gizmo | `src/main.ts` |
