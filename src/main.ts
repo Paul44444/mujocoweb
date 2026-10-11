@@ -123,7 +123,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
               <option value="labware">Stage 2 · Place in Rack</option>
               <option value="rack_insert">New · Upright Tube → Rack Hole</option>
               <option value="rack_vision">Vision · Tube → Rack · RGB-D markers</option>
-              <option value="rack_five">Labware · Five Tubes in Rack</option>
+              <option value="rack_five">Labware · Five Tubes + Incubator</option>
             </select>
             <button id="sceneAccountButton" class="setup-button" type="button" aria-controls="sceneAccountPanel" aria-expanded="false">
               <span aria-hidden="true">◎</span><span id="sceneAccountLabel">User: Guest</span>
@@ -241,6 +241,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           <button type="button" draggable="true" data-live-asset="hammer">⚒ Hammer</button>
           <button type="button" draggable="true" data-live-asset="kuka_allegro">KUKA Robot</button>
           <small>Drag into scene</small>
+          <span id="incubatorControls" hidden>
+            <button id="incubatorOpenButton" type="button" disabled>Open incubator</button>
+            <button id="incubatorCloseButton" type="button" disabled>Close incubator</button>
+            <small id="incubatorDoorValue">Door: closed</small>
+          </span>
         </div>
 
         <div class="metadata">
@@ -940,7 +945,7 @@ let selectedSimulationEngine: SimulationEngine = "isaaclab";
 let selectedIsaacTask: IsaacTask = "state";
 
 function isaacTaskName(task: IsaacTask): string {
-    if (task === "rack_five") return "Five Tubes in Rack";
+    if (task === "rack_five") return "Five Tubes + Incubator";
     if (task === "rack_vision") return "Vision · Tube → Rack";
     if (task === "rack_insert") return "Upright Tube → Rack Hole";
     if (task === "vision") return "Vision-based Cube Lift";
@@ -2683,6 +2688,7 @@ function validateConfiguration(): boolean {
 }
 
 function applyConfiguration(): void {
+    updateIncubatorControls();
     const graspTest = selectedSimulationEngine === "isaaclab" && selectedIsaacTask === "graspgen";
     document.querySelector<HTMLElement>("#graspVariationControls")!.hidden = !graspTest;
     policyEvaluationControls.hidden = selectedSimulationEngine === "mujoco" || graspTest || selectedIsaacTask === "rack_vision" || selectedIsaacTask === "rack_five";
@@ -2693,7 +2699,7 @@ function applyConfiguration(): void {
     const task = taskCatalog[selectedTaskId];
     configurationSummary.textContent = selectedSimulationEngine === "isaaclab"
         ? selectedIsaacTask === "rack_five"
-            ? "NVIDIA Isaac Lab · Five physical tubes · Twelve-hole rack · Scene preview"
+            ? "NVIDIA Isaac Lab · Five tubes + incubator · Articulated door · Scene preview"
         : selectedIsaacTask === "rack_vision"
             ? "NVIDIA Isaac Lab · RGB-D marker perception → upright tube rack insertion"
         : selectedIsaacTask === "rack_insert"
@@ -2713,7 +2719,7 @@ function applyConfiguration(): void {
     }
     interactionHint.textContent = selectedSimulationEngine === "isaaclab"
         ? selectedIsaacTask === "rack_five"
-            ? "Five tubes in 5 of 12 rack slots · physical contacts · Reset restores all five · no autonomous policy yet"
+            ? "Five tubes + incubator · Open/close door below the scene · Reset restores tubes and closes door · no autonomous policy yet"
         : selectedIsaacTask === "rack_vision"
             ? "Vision reference · RGB-D cameras + markers · static rack calibrated from images · no direct object/rack pose access"
         : selectedIsaacTask === "rack_insert"
@@ -2797,6 +2803,7 @@ async function syncIsaacTaskSelection(): Promise<void> {
 }
 
 function updateEngineUi(): void {
+    updateIncubatorControls();
     simulationEngineSelect.value = selectedSimulationEngine;
     isaacTaskSelect.value = selectedIsaacTask;
     const usesMujoco = selectedSimulationEngine === "mujoco";
@@ -3520,6 +3527,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         startButton.disabled = false;
         updatePlaybackButton();
         resetCameraButton.disabled = false;
+        updateIncubatorControls();
         episodeResetButton.disabled = selectedSimulationEngine !== "isaaclab" || demoRecording;
         captureEvent(editorPreview ? "scene_editor_opened" : "simulation_started", {
             engine: selectedSimulationEngine,
@@ -3555,6 +3563,7 @@ function connectToSimulation(fallbackAttempt = false, editorPreview = false, run
         isPaused = false;
         pendingPauseState = null;
         updatePlaybackButton();
+        updateIncubatorControls();
         resetCameraButton.disabled = true;
         episodeResetButton.disabled = true;
         startButton.disabled = false;
@@ -3623,6 +3632,10 @@ function handleTextMessage(message: string): void {
                 }
             }
             if (data.render_camera) renderCamera = data.render_camera;
+            updateIncubatorControls();
+            if (typeof data.incubator_door_angle === "number") {
+                document.querySelector<HTMLElement>("#incubatorDoorValue")!.textContent = `Door: ${Math.round(data.incubator_door_angle)}°${data.paused ? " · paused" : ""}`;
+            }
             if (data.camera && selectedSimulationEngine === "mujoco") previewCamera = data.camera;
             if (selectedSimulationEngine === "isaaclab" && (selectedIsaacTask === "vision" || selectedIsaacTask === "rack_vision") && Date.now() - lastVisionFrameRefresh > 250) {
                 lastVisionFrameRefresh = Date.now();
@@ -3957,6 +3970,17 @@ simulationWindow.addEventListener("dragleave", (event) => {
 });
 simulationWindow.addEventListener("drop", dropSceneAsset);
 simulationImage.addEventListener("wheel", zoomCamera, {passive: false});
+function updateIncubatorControls(): void {
+    const visible = selectedSimulationEngine === "isaaclab" && selectedIsaacTask === "rack_five";
+    document.querySelector<HTMLElement>("#incubatorControls")!.hidden = !visible;
+    for (const id of ["incubatorOpenButton", "incubatorCloseButton"]) {
+        const button = document.querySelector<HTMLButtonElement>(`#${id}`)!;
+        button.disabled = !visible || !socket || socket.readyState !== WebSocket.OPEN || isPaused;
+        button.title = isPaused ? "Resume simulation to move the door" : "Move the physical hinge (not robot-controlled yet)";
+    }
+}
+document.querySelector<HTMLButtonElement>("#incubatorOpenButton")!.addEventListener("click", () => sendSimulationCommand({type: "incubator_door", open: true}));
+document.querySelector<HTMLButtonElement>("#incubatorCloseButton")!.addEventListener("click", () => sendSimulationCommand({type: "incubator_door", open: false}));
 resetCameraButton.addEventListener("click", () => sendSimulationCommand({type: "camera_reset"}));
 isaacTaskSelect.addEventListener("change", () => {
     const value = isaacTaskSelect.value;
