@@ -65,6 +65,17 @@ when a direct dependency blocks the requested simulation work.
 
 ## Isaac Lab tasks (only when explicitly in scope)
 
+- `isaac_cell_lab_task.py`, `isaac_cell_lab_controller.py`: additional `cell_lab`
+  cell-culture laboratory from `/home/paul/Desktop/3Dmodels` (`CELL_LAB_MODELS`
+  overrides the root). Imports the generated `laborszene/laborszene_cfg.py`
+  without editing it. Translates the entire lab by `(-.1,+.52,-.9)` so the
+  robot mounting point becomes the original Cube Lift origin/table height.
+  Ten furniture articulations have fixed bases; background loose props are
+  static. Only the target cube is dynamic. First task is a physical-contact
+  Lula IK cube lift, not a neural actor or a new PPO task. Regression:
+  `test_cell_lab.py`; validation enables `reference/cell-lab-cube` in the API.
+  Independent overview/workbench camera presets preserve all older scenes.
+
 - `isaac_incubator_task.py`, `isaac_incubator_controller.py`: separate `incubator`
   playback reference. Cyan tube extracted from a five-tube rack (other four
   remain seated), real friction grasp, vertical clearance then Lula IK rotation to
