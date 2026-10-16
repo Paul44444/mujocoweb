@@ -65,6 +65,17 @@ when a direct dependency blocks the requested simulation work.
 
 ## Isaac Lab tasks (only when explicitly in scope)
 
+- `isaac_cell_lab_incubator_task.py` / `isaac_cell_lab_incubator_controller.py`:
+  additional `cell_lab_incubator` tube-loading reference in the full laboratory.
+  Compact 0.5-scale copy of the owner's two-door incubator at `(.49,.43,.14)`,
+  yaw -45 degrees facing the robot,
+  on an open riser; microscope moved to an extra side bench. Uses the proven
+  dynamic five-tube rack/target from the older task. Both source-model doors
+  actuate physically (outer first to open, inner first to close); shelf and
+  cavity colliders retained. `test_cell_lab_incubator.py` gates the reference.
+  Inspect command opens only the opaque outer door after completion. Original
+  lab cube task, source models and older incubator scene are unchanged.
+
 - `isaac_cell_lab_task.py`, `isaac_cell_lab_controller.py`: additional `cell_lab`
   cell-culture laboratory from `/home/paul/Desktop/3Dmodels` (`CELL_LAB_MODELS`
   overrides the root). Imports the generated `laborszene/laborszene_cfg.py`
